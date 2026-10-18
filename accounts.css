@@ -1,0 +1,66 @@
+.accounts-summary { display:flex; gap:64px; margin:10px 0 28px; }
+.accounts-summary > div { display:grid; gap:9px; }
+.accounts-summary span { color:var(--ui-muted); font-size:12px; }
+.accounts-summary strong { font:500 30px var(--font-data); color:var(--ui-text); }
+.accounts-table { overflow:hidden; }
+.accounts-table table { width:100%; min-width:760px; }
+.accounts-table th { font-size:11px; font-weight:500; }
+.accounts-table td { font-size:13px; vertical-align:middle; padding:16px 18px; }
+.accounts-table td strong { font-weight:550; }
+.accounts-table .cell-secondary { display:block; margin-top:5px; font-size:11px; color:var(--ui-muted); }
+.accounts-table .section-header { border-bottom:0; }
+.accounts-actions { text-align:right; white-space:nowrap; }
+.accounts-actions .btn { margin-left:5px; font-size:12px; padding:5px 9px; min-height:32px; height:32px; }
+.account-status { font-size:11px; display:inline-flex; align-items:center; gap:6px; color:#5a7180; white-space:nowrap; }
+.account-status:before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
+.account-status.active { color:#507b68; }
+.account-status.pending { color:#9a7747; }
+.account-status.disabled { color:#8b9299; }
+.account-code, .account-id-cell code { font-family:var(--font-data); font-size:12px; }
+.account-id-cell { display:flex; align-items:center; gap:7px; }
+.account-id-cell .icon-button { width:26px; height:26px; }
+.account-id-cell .icon svg { width:14px; height:14px; }
+.accounts-search { display:flex; align-items:center; gap:8px; width:280px; }
+.accounts-search .input { min-width:0; width:100%; }
+.accounts-search .icon svg { width:16px; height:16px; }
+.accounts-context { display:flex; justify-content:space-between; align-items:center; gap:20px; margin:0 0 20px; }
+.accounts-context > div:first-child { display:grid; gap:6px; }
+.accounts-context strong { font-size:15px; font-weight:550; }
+.accounts-context .account-code { color:var(--ui-muted); }
+.accounts-scope { display:flex; align-items:center; gap:16px; }
+.accounts-scope .ui-select { width:200px; }
+.accounts-seat { font-size:12px; color:var(--ui-muted); white-space:nowrap; }
+.accounts-empty { padding:40px 24px; text-align:center; color:var(--ui-muted); }
+.accounts-empty h2 { font-size:17px; font-weight:500; color:var(--ui-text); }
+.accounts-empty p { font-size:13px; }
+.accounts-back { margin:-10px 0 20px; display:flex; align-items:center; gap:6px; }
+.accounts-back .icon { transform:rotate(180deg); }
+.accounts-check { display:flex; align-items:center; gap:8px; font-size:13px; }
+.accounts-check input { accent-color:var(--ui-accent); }
+.accounts-form-error { color:var(--ui-danger); font-size:13px; }
+.accounts-form-error:empty { display:none; }
+.account-handoff h3 { margin:0 0 20px; font-size:18px; }
+.account-handoff > label { display:block; color:var(--ui-muted); font-size:12px; margin:15px 0 7px; }
+.account-handoff-id { display:flex; align-items:center; gap:14px; }
+.account-handoff-id code { font:500 24px var(--font-data); letter-spacing:.03em; }
+.account-handoff p { font-size:12px; line-height:1.7; color:var(--ui-muted); }
+.account-handoff .input { width:100%; font-size:12px; }
+.account-copy-text { width:100%; min-height:160px; }
+.accounts-login .field { margin-bottom:16px; }
+.accounts-login .form-hint { line-height:1.65; margin:15px 0; color:var(--ui-muted); font-size:12px; }
+.accounts-login .accounts-login-links { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:22px; }
+.accounts-login-links .text-button { font-size:12px; }
+.accounts-login .input { width:100%; }
+.accounts-login #staff-login-id { font-family:var(--font-data); letter-spacing:.08em; }
+.accounts-login .account-activation-identity { margin:22px 0; padding:14px 0; border-top:1px solid var(--ui-border); border-bottom:1px solid var(--ui-border); display:grid; gap:7px; font-size:13px; }
+.account-preview-link { display:block; color:#c6d5df; font-size:11px; margin:10px 0; text-decoration:none; }
+@media(max-width:720px){.accounts-summary {gap:35px}.accounts-context,.accounts-scope {flex-wrap:wrap;gap:12px}.accounts-context {align-items:flex-start}.accounts-table .section-header {flex-wrap:wrap;gap:12px}.accounts-search {width:100%}.accounts-scope .ui-select {width:180px}.accounts-actions .btn {min-height:36px;height:36px}.accounts-login .input {font-size:16px}}
+.account-login-tabs { display:flex; gap:22px; margin:20px 0 24px; }
+.account-login-tabs .tab { flex:1; font-size:14px; padding:10px 0 13px; }
+.account-master-input { font-family:var(--font-data); letter-spacing:.06em; }
+.account-master-code-row { display:flex; gap:8px; align-items:center; }
+.account-master-code-row input { font-size:19px; width:100%; min-width:0; }
+.account-master-code-row .icon-button { flex:none; }
+.accounts-tenant-picker { display:flex; align-items:center; gap:14px; margin:0 0 22px; color:var(--ui-muted); font-size:12px; }
+.accounts-tenant-picker .ui-select { width:300px; max-width:100%; }
+@media(max-width:560px){.account-master-code-row input{font-size:15px}.accounts-tenant-picker{flex-wrap:wrap;gap:8px}}

@@ -1,0 +1,118 @@
+/* Selects share the application's controls, including the expanded menu. */
+.ui-select { position:relative; display:block; min-width:0; width:100%; }
+.ui-select-store { width:320px; max-width:100%; }
+.ui-select select.ui-select-native { position:absolute !important; width:1px !important; min-width:0 !important; height:1px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; opacity:0; clip-path:inset(50%); pointer-events:none; }
+.ui-select-trigger {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  width:100%; min-width:0; height:var(--ui-control-height); margin:0; padding:0 12px;
+  border:1px solid var(--ui-border); border-radius:var(--ui-radius);
+  background:var(--ui-surface); color:var(--ui-text); font:inherit; font-size:14px; line-height:20px;
+  text-align:left; cursor:pointer; box-shadow:none; outline:none;
+  transition:border-color .15s, background-color .15s;
+}
+.ui-select-trigger:hover:not(:disabled) { border-color:var(--ui-border-hover); background:var(--ui-subtle); }
+.ui-select-trigger:focus-visible { outline:2px solid #7eaa8f; outline-offset:2px; box-shadow:none; }
+.ui-select.is-open .ui-select-trigger { border-color:var(--ui-accent); background:var(--ui-surface); }
+.ui-select-value { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ui-select-arrow { display:flex; align-items:center; justify-content:center; flex:0 0 16px; width:16px; height:16px; color:var(--ui-muted); transition:transform .15s; }
+.ui-select-arrow svg, .ui-select-check svg { display:block; width:16px; height:16px; }
+.ui-select.is-open .ui-select-arrow { transform:rotate(180deg); color:var(--ui-accent); }
+.ui-select.is-placeholder .ui-select-value { color:var(--ui-muted); }
+.ui-select-trigger:disabled { color:#7a877e; background:#f0f3ef; border-color:var(--ui-border); cursor:not-allowed; opacity:1; }
+.ui-select-trigger[aria-invalid="true"] { border-color:var(--ui-danger); }
+.ui-select-unit .ui-select-trigger { gap:5px; padding:0 8px; }
+.ui-select-unit .ui-select-arrow { flex-basis:14px; width:14px; }
+.inline-tax-fields > .ui-select { width:140px; }
+.quote-entry .inline-tax-fields > .ui-select { width:100%; }
+.product-card-content > .ui-select { align-self:flex-start; width:100px; margin:0 0 7px; }
+
+.ui-select-menu {
+  position:fixed; z-index:1200; display:flex; flex-direction:column; padding:5px;
+  border:1px solid var(--ui-border); border-radius:10px; background:var(--ui-surface);
+  box-shadow:0 10px 28px rgba(27,51,37,.12),0 2px 5px rgba(27,51,37,.04);
+  color:var(--ui-text); font-size:14px; line-height:20px; isolation:isolate;
+}
+.ui-select-options { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#c2d0c5 transparent; }
+.ui-select-option { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; padding:9px 11px; border-radius:6px; cursor:pointer; }
+.ui-select-option > span:first-child { min-width:0; overflow-wrap:anywhere; }
+.ui-select-option[aria-selected="true"] { background:var(--ui-selected); color:var(--ui-accent); font-weight:500; }
+.ui-select-option.is-active { background:var(--ui-hover); }
+.ui-select-option[aria-selected="true"].is-active { background:#e2eee5; }
+.ui-select-check { display:flex; flex:0 0 16px; visibility:hidden; color:var(--ui-accent); }
+.ui-select-option[aria-selected="true"] .ui-select-check { visibility:visible; }
+.ui-select-option[aria-disabled="true"] { color:#8c978f; cursor:not-allowed; }
+.ui-select-search { display:flex; align-items:center; flex:none; gap:8px; padding:0 10px; margin:3px 3px 7px; min-height:38px; border:1px solid var(--ui-border); border-radius:6px; background:var(--ui-subtle); }
+.ui-select-search > svg { flex:0 0 16px; width:16px; height:16px; color:var(--ui-muted); }
+.ui-select-search input { width:100%; min-width:0; padding:8px 0; border:0; border-radius:0; background:transparent; color:var(--ui-text); font:inherit; }
+.ui-select-search:focus-within { border-color:var(--ui-border-hover); }
+.ui-select-search input:focus { outline:none; box-shadow:none; }
+.ui-select-empty { padding:15px 11px; color:var(--ui-muted); text-align:center; }
+@media(max-width:720px) {
+  .ui-select-trigger, .ui-select-menu, .ui-select-search input { font-size:16px; }
+  .ui-select-option { min-height:44px; padding:11px; }
+  .ui-select-store { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) { .ui-select-trigger, .ui-select-arrow { transition:none; } }
+
+/* Date fields and calendar popovers use the same component tokens as selects. */
+.ui-date { position:relative; display:block; width:100%; min-width:0; }
+.ui-date input.ui-date-native { position:absolute !important; width:1px !important; min-width:0 !important; height:1px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; opacity:0; clip-path:inset(50%); pointer-events:none; }
+.ui-date-trigger {
+  display:flex; align-items:center; gap:9px; width:100%; min-width:0;
+  height:var(--ui-control-height); padding:0 12px; margin:0;
+  border:1px solid var(--ui-border); border-radius:var(--ui-radius);
+  background:var(--ui-surface); color:var(--ui-text); font:inherit; font-size:13px; line-height:20px;
+  text-align:left; cursor:pointer; box-shadow:none; font-variant-numeric:tabular-nums;
+  transition:border-color .15s, background-color .15s;
+}
+.ui-date-trigger:hover:not(:disabled) { background:var(--ui-subtle); border-color:var(--ui-border-hover); }
+.ui-date-trigger:focus-visible { outline:2px solid var(--ui-accent); outline-offset:2px; box-shadow:none; }
+.ui-date.is-open .ui-date-trigger { border-color:var(--ui-accent); }
+.ui-date.is-placeholder .ui-date-value { color:var(--ui-muted); }
+.ui-date-trigger:disabled { background:var(--ui-subtle); color:var(--ui-muted); opacity:.6; cursor:not-allowed; }
+.ui-date-trigger[aria-invalid="true"] { border-color:var(--ui-danger); }
+.ui-date-icon { display:flex; align-items:center; justify-content:center; flex:0 0 16px; color:var(--ui-muted); }
+.ui-date-icon svg { display:block; width:16px; height:16px; }
+.ui-date-value { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.date-control:has(.ui-date) { padding:0; gap:0; border:0; background:transparent; box-shadow:none; }
+.date-control:has(.ui-date):focus-within { border:0; box-shadow:none; }
+.date-control > .icon:has(+ .ui-date) { display:none; }
+.date-control .ui-date { width:172px; }
+.ui-calendar {
+  position:fixed; z-index:1200; box-sizing:border-box; overflow:auto; overscroll-behavior:contain;
+  padding:14px; border:1px solid var(--ui-border); border-radius:var(--ui-card-radius);
+  background:var(--ui-surface); color:var(--ui-text); font-size:13px; line-height:20px;
+  box-shadow:0 16px 40px rgba(20,28,42,.12), 0 3px 8px rgba(20,28,42,.04); isolation:isolate;
+}
+.ui-calendar-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.ui-calendar-header strong { color:var(--ui-text); font-size:14px; line-height:20px; font-weight:600; }
+.ui-calendar-nav { display:flex; align-items:center; justify-content:center; flex:0 0 30px; width:30px; height:30px; padding:6px; margin:0; border:0; border-radius:6px; background:transparent; color:var(--ui-muted); cursor:pointer; }
+.ui-calendar-nav svg { width:17px; height:17px; }
+.ui-calendar-nav:hover:not(:disabled) { background:var(--ui-hover); color:var(--ui-text); }
+.ui-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }
+.ui-calendar-week { display:contents; }
+.ui-calendar-week > [role="columnheader"] { display:flex; align-items:center; justify-content:center; height:26px; margin-bottom:4px; color:var(--ui-muted); font-size:11px; font-weight:500; }
+.ui-calendar-day {
+  display:flex; align-items:center; justify-content:center; aspect-ratio:1; min-width:0; min-height:32px;
+  margin:0; padding:0; border:1px solid transparent; border-radius:7px;
+  background:transparent; color:var(--ui-text); font:inherit; font-size:13px; font-weight:500;
+  font-variant-numeric:tabular-nums; cursor:pointer; position:relative;
+}
+.ui-calendar-day.is-outside { color:var(--ui-muted); font-weight:400; opacity:.6; }
+.ui-calendar-day:hover:not(:disabled) { background:var(--ui-hover); }
+.ui-calendar-day[aria-current="date"]::after { content:""; position:absolute; bottom:3px; left:calc(50% - 1.5px); width:3px; height:3px; background:currentColor; border-radius:50%; }
+.ui-calendar-day[aria-selected="true"], .ui-calendar-day[aria-selected="true"]:hover { color:#fff; background:var(--ui-accent); border-color:var(--ui-accent); opacity:1; }
+.ui-calendar button:focus-visible { outline:2px solid var(--ui-accent); outline-offset:1px; box-shadow:none; }
+.ui-calendar-day:disabled, .ui-calendar-nav:disabled { color:var(--ui-muted); opacity:.3; cursor:not-allowed; }
+.ui-calendar-footer { display:flex; align-items:center; justify-content:space-between; margin-top:10px; padding-top:9px; border-top:1px solid var(--ui-border); }
+.ui-calendar-footer button { min-height:30px; padding:4px 10px; border:0; border-radius:6px; background:transparent; color:var(--ui-accent); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+.ui-calendar-footer button:hover:not(:disabled) { background:var(--ui-hover); }
+.ui-calendar-footer button:disabled { color:var(--ui-muted); opacity:.4; cursor:not-allowed; }
+@media(max-width:720px) {
+  .ui-date-trigger { font-size:14px; }
+  .date-control .ui-date { width:100%; min-width:164px; }
+  .ui-calendar-nav { width:34px; height:34px; flex-basis:34px; }
+  .ui-calendar-day { min-height:35px; font-size:14px; }
+  .ui-calendar-footer button { min-height:34px; font-size:13px; }
+}
+@media(prefers-reduced-motion:reduce) { .ui-date-trigger { transition:none; } }

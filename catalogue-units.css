@@ -1,0 +1,61 @@
+/* Unit equations and inventory input retain the catalogue's existing visual language. */
+#sale-units-form .unit-equation-head,
+#sale-units-form .unit-equation-row {
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 30px;
+  gap: 10px;
+}
+#sale-units-form .unit-equation-head { margin-top: 0; }
+#sale-units-form .unit-equation-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+#sale-units-form .unit-equation-side .input {
+  height: 40px;
+  padding: 8px 9px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#sale-units-form .unit-equation-side select { padding-right: 6px; }
+#sale-units-form .unit-equation-equals { text-align: center; color: #718267; }
+#sale-units-form .unit-equation-row > .cell-edit-button { padding: 6px 0; }
+#sale-units-form .form-hint { line-height: 1.8; }
+#sale-units-form #sale-unit-error { max-width: none; }
+.inventory-stock-value { display: grid; gap: 5px; min-width: 0; }
+.inventory-equivalents {
+  color: #909a86;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+  max-width: 160px;
+}
+.inventory-editor { min-width: 174px; max-width: 220px; }
+.inventory-entry-fields { display: flex; align-items: stretch; gap: 6px; }
+.inventory-entry-fields .inline-number { flex: 1 1 96px; width: 96px; }
+.inventory-entry-fields .sale-unit-select { flex: 0 0 68px; width: 68px; min-width: 0; }
+.inventory-entry-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.inventory-conversion-hint {
+  display: block;
+  margin-top: 7px;
+  color: #849178;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.inventory-conversion-hint:empty { display: none; }
+@media (max-width: 560px) {
+  #sale-units-form .unit-equation-head,
+  #sale-units-form .unit-equation-row { grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr) 26px; gap: 6px; }
+  #sale-units-form .unit-equation-side { grid-template-columns: minmax(0, 1fr) 55px; gap: 4px; }
+  #sale-units-form .unit-equation-side .input { padding: 8px 5px; font-size: 16px; }
+  .inventory-entry-fields .sale-unit-select { font-size: 16px; }
+}
+@media (max-width: 380px) {
+  #sale-units-form .unit-equation-head,
+  #sale-units-form .unit-equation-row { grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr); }
+  #sale-units-form .unit-equation-head > span:last-child { display: none; }
+  #sale-units-form .unit-equation-row > .cell-edit-button { grid-column: 3; justify-self: end; }
+}

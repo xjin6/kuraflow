@@ -1,0 +1,59 @@
+/* Compact store cards retain the existing type scale and control sizes. */
+.store-card .store-card-heading { padding:16px 20px 12px; }
+.store-card .store-card-info { gap:8px; padding-bottom:14px; }
+.store-card .store-card-footer { grid-template-columns:repeat(3,minmax(0,1fr)); padding:4px 20px 16px; gap:8px; }
+.store-card .store-card-footer .btn { padding-left:9px; padding-right:9px; }
+.settlement-toolbar { display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; margin:0 0 16px; }
+.settlement-filter { display:grid; gap:6px; min-width:180px; max-width:320px; }
+.settlement-filter > span { color:var(--ui-muted); font-size:12px; }
+.settlement-filter:first-child { flex:1; }
+.settlement-demo { display:flex; align-items:center; gap:7px; min-height:40px; color:var(--ui-muted); font-size:12px; margin-left:auto; }
+.settlement-demo input { accent-color:var(--ui-accent); }
+.settlement-metrics .stat-value { font-size:30px; }
+.settlement-metrics .stat-card:last-child .stat-value { font-size:30px; }
+.settlement-metrics .stat-foot:empty { display:none; }
+.settlement-result-count { color:var(--ui-muted); font-size:12px; }
+.settlement-store-context { display:flex; align-items:center; gap:12px; padding:18px 22px 0; }
+.settlement-store-context .store-avatar { width:36px; height:36px; }
+.settlement-store-context > div { display:grid; gap:4px; }
+.settlement-store-context strong { color:var(--ui-text); font-weight:550; font-size:15px; }
+.settlement-store-context span { color:var(--ui-muted); font-size:12px; }
+.settlement-table { min-width:850px; width:100%; }
+.settlement-table td { vertical-align:middle; }
+.settlement-table .cell-secondary { display:block; margin-top:4px; }
+.settlement-table .settlement-money { font-family:var(--font-data); font-size:13px; font-variant-numeric:tabular-nums; }
+.settlement-table .settlement-money .cell-secondary { font-family:var(--font-ui); }
+.settlement-table .settlement-actions { white-space:nowrap; text-align:right; }
+.settlement-actions .btn { min-height:32px; height:32px; padding:4px 10px; font-size:12px; }
+.settlement-actions .btn + .btn { margin-left:6px; }
+.settlement-archive { margin-top:24px; color:var(--ui-muted); font-size:12px; }
+.settlement-archive summary { cursor:pointer; width:fit-content; padding:8px 0; }
+.settlement-archive summary span { margin-left:7px; font-family:var(--font-data); }
+.settlement-archive > div { display:grid; justify-items:start; gap:6px; margin-top:6px; }
+.settlement-detail-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:20px; }
+.settlement-detail-header > div { min-width:0; }
+.settlement-detail-header > div:last-child { text-align:right; }
+.settlement-detail-header h3 { margin:0 0 7px; font-size:18px; color:var(--ui-text); }
+.settlement-detail-header p { margin:4px 0 0; color:var(--ui-muted); font-size:12px; overflow-wrap:anywhere; }
+.settlement-detail .table-scroll { border:1px solid var(--ui-border); border-radius:6px; }
+.settlement-detail table { min-width:540px; }
+.settlement-detail td { font-size:13px; }
+.settlement-detail td .cell-secondary { display:block; margin-top:3px; }
+.settlement-totals { margin:18px 0 0 auto; width:310px; display:grid; gap:9px; }
+.settlement-totals > div { display:flex; justify-content:space-between; align-items:baseline; gap:20px; }
+.settlement-totals dt { color:var(--ui-muted); font-size:12px; }
+.settlement-totals dd { margin:0; color:var(--ui-text); font:14px var(--font-data); }
+.settlement-note { color:var(--ui-muted); font-size:12px; margin:14px 0 0; text-align:right; }
+.order-detail-heading-actions { display:flex; gap:8px; margin-left:auto; }
+@media(max-width:720px) {
+  .settlement-filter { min-width:0; flex:1; }
+  .settlement-toolbar { gap:12px; }
+  .settlement-demo { min-height:24px; width:100%; margin:0; }
+  .settlement-metrics .stat-value, .settlement-metrics .stat-card:last-child .stat-value { font-size:24px; }
+  .settlement-store-context { padding:16px 16px 0; }
+  .settlement-detail-header { display:grid; gap:12px; }
+  .settlement-detail-header > div:last-child { text-align:left; }
+  .settlement-totals { width:100%; }
+  .order-detail-heading { flex-wrap:wrap; }
+  .order-detail-heading-actions { margin-left:auto; }
+}

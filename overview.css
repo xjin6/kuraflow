@@ -1,0 +1,141 @@
+/* Business overview shares the existing steel-blue surfaces and typography. */
+.business-heading { margin-bottom:18px; align-items:center; }
+.business-periods { gap:12px; width:auto; margin-left:auto; }
+.business-periods .tab { min-height:38px; font-size:12px; padding:8px 10px 11px; }
+.business-scope { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 18px; margin:-4px 0 16px; color:var(--ui-muted); font-size:12px; }
+.business-order-counts { display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; }
+.business-order-counts .text-button { display:inline-flex; align-items:center; gap:5px; font-size:12px; }
+.business-order-counts strong { font:550 13px var(--font-data); }
+.business-order-counts .icon svg { width:14px; height:14px; }
+.business-order-counts > span { font-size:11px; }
+.business-demo { display:inline-flex; align-items:center; gap:7px; cursor:pointer; min-height:32px; }
+.business-demo input { accent-color:var(--ui-accent); width:14px; height:14px; margin:0; }
+.business-custom-range { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+.business-custom-range > label { display:grid; gap:6px; }
+.business-custom-range > label > span { color:var(--ui-muted); font-size:12px; }
+.business-custom-range .ui-date { width:166px; }
+.business-date-separator { height:40px; display:flex; align-items:center; color:var(--ui-muted); font-size:12px; }
+.business-tasks { display:flex; align-items:center; flex-wrap:wrap; gap:12px 26px; padding:13px 18px; background:rgba(255,255,255,.66); border:1px solid var(--ui-border); border-radius:6px; margin-bottom:22px; }
+.business-tasks-label { display:flex; align-items:baseline; gap:9px; flex:none; }
+.business-tasks-label strong { color:var(--ui-text); font-size:12px; font-weight:550; }
+.business-tasks-label > span { color:var(--ui-muted); font:11px var(--font-data); }
+.business-task-links { display:flex; align-items:center; flex-wrap:wrap; gap:20px; }
+.business-task-link { display:inline-flex; align-items:baseline; gap:5px; padding:4px 0; border:0; background:none; color:var(--ui-accent); font-size:12px; }
+.business-task-link strong { font:550 15px var(--font-data); margin-left:3px; }
+.business-task-link:hover:not(:disabled) { color:#173e58; text-decoration:underline; text-underline-offset:5px; }
+.business-task-link:disabled { color:var(--ui-muted); cursor:default; }
+.business-task-link.has-issue, .business-overdue { color:#a74d50; }
+.business-overdue { display:flex; align-items:center; gap:5px; margin-left:auto; border:0; padding:4px 0; background:none; font-size:11px; }
+.business-overdue .icon svg { width:13px; height:13px; }
+.business-period-caption { display:flex; justify-content:space-between; gap:12px; color:var(--ui-muted); font-size:11px; }
+.business-period-caption > span:first-child { font-family:var(--font-data); }
+.business-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:30px; margin:18px 0 28px; }
+.business-metric-label { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--ui-muted); font-size:12px; }
+.business-metric-label .icon { color:#8fa3b1; }
+.business-metric-label svg { width:16px; height:16px; }
+.business-metric-value { display:flex; align-items:baseline; gap:5px; margin:12px 0 9px; min-height:43px; color:var(--ui-text); font-size:clamp(24px,2.45vw,34px); font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:-.045em; white-space:nowrap; }
+.business-metric-value small { font-size:12px; color:var(--ui-muted); font-weight:400; letter-spacing:0; }
+.business-metric-value.is-unknown { font-size:25px; }
+.business-comparison { display:block; color:var(--ui-muted); font-size:11px; font-weight:400; line-height:18px; font-family:var(--font-ui); }
+.business-comparison.up { color:#426f83; }
+.business-comparison.down { color:#a54c54; }
+.business-comparison > span { color:var(--ui-muted); margin-left:3px; }
+.business-data-note { display:flex; align-items:flex-start; gap:7px; font-size:12px; color:#916b41; margin:-7px 0 20px; }
+.business-data-note .icon { height:18px; }
+.business-trend { margin-bottom:20px; }
+.business-trend .section-header { border-bottom:0; align-items:flex-start; }
+.business-trend .section-header p, .business-ranking .section-header p { margin:5px 0 0; color:var(--ui-muted); font-size:11px; }
+.business-chart-switch { gap:8px; }
+.business-chart-switch .tab { min-height:34px; padding:4px 10px 9px; font-size:12px; }
+.business-chart { padding:10px 30px 23px 70px; }
+.business-chart-plot { position:relative; height:205px; }
+.business-chart-grid { position:absolute; left:0; right:0; height:0; border-top:1px solid #e8edf1; }
+.business-chart-grid > span { position:absolute; top:0; right:calc(100% + 12px); transform:translateY(-50%); color:#637986; font:10px var(--font-data); white-space:nowrap; }
+.business-chart-svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+.business-chart-hit { position:absolute; top:0; height:100%; padding:0; transform:translateX(-50%); border:0; background:none; border-radius:0; z-index:2; cursor:crosshair; }
+.business-chart-hit:focus-visible { outline:none; }
+.business-chart-guide { position:absolute; left:50%; top:0; bottom:0; border-left:1px dashed #9cb2c2; opacity:0; }
+.business-chart-dot { position:absolute; left:50%; top:var(--dot-top); transform:translate(-50%,-50%); width:10px; height:10px; border-radius:50%; border:2px solid #fff; background:#456981; box-shadow:0 0 0 1px #456981; opacity:0; }
+.business-chart-tooltip { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:grid; gap:4px; text-align:left; width:160px; padding:11px 13px; background:#fff; color:var(--ui-text); border:1px solid var(--ui-border); border-radius:6px; box-shadow:0 4px 20px rgba(30,57,78,.13); pointer-events:none; opacity:0; visibility:hidden; transition:opacity 120ms; }
+.business-chart-tooltip strong { color:var(--ui-muted); font:11px var(--font-data); }
+.business-chart-tooltip > span { font:14px var(--font-data); }
+.business-chart-tooltip small { font-size:11px; color:var(--ui-muted); }
+.business-chart-hit.is-first .business-chart-tooltip { left:50%; transform:none; }
+.business-chart-hit.is-last .business-chart-tooltip { left:auto; right:50%; transform:none; }
+.business-chart-hit.is-only .business-chart-tooltip { left:50%; right:auto; transform:translateX(-50%); }
+.business-chart-hit:hover, .business-chart-hit:focus { z-index:3; }
+.business-chart-hit:hover .business-chart-tooltip, .business-chart-hit:focus .business-chart-tooltip { opacity:1; visibility:visible; }
+.business-chart-hit:hover .business-chart-guide, .business-chart-hit:focus .business-chart-guide,
+.business-chart-hit:hover .business-chart-dot, .business-chart-hit:focus .business-chart-dot,
+.business-chart-hit.is-only .business-chart-dot { opacity:1; }
+.business-chart-axis { display:flex; justify-content:space-between; margin-top:13px; font:10px var(--font-data); color:var(--ui-muted); }
+.business-chart-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; min-height:224px; padding:24px; text-align:center; }
+.business-chart-empty > .icon { color:#9badb9; margin-bottom:4px; }
+.business-chart-empty > strong { color:var(--ui-text); font-size:13px; font-weight:500; }
+.business-chart-empty > span:last-child { color:var(--ui-muted); font-size:12px; }
+.business-rankings { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(0,1fr); gap:20px; }
+.business-ranking { min-width:0; }
+.business-ranking .section-header { align-items:baseline; border-bottom:0; gap:10px; }
+.business-ranking .section-header .text-button { font-size:11px; white-space:nowrap; }
+.business-ranking table { width:100%; min-width:430px; }
+.business-ranking td { border:0; font-size:12px; padding:14px 18px; vertical-align:middle; }
+.business-ranking th { font-size:11px; border:0; padding:11px 18px; }
+.business-ranking td .cell-secondary { display:block; margin-top:3px; font-size:11px; }
+.business-ranking .product-name-link { font-size:13px; text-align:left; }
+.business-ranking td.business-numeric { font:12px var(--font-data); white-space:nowrap; }
+.business-numeric .business-comparison { margin-top:3px; font-size:10px; }
+.business-last-order { white-space:nowrap; font:11px var(--font-data); color:var(--ui-muted); }
+.business-product-name { display:flex; align-items:baseline; gap:11px; }
+.business-rank { font:10px var(--font-data); color:#7b919f; }
+.business-quantities { font-family:var(--font-data); font-size:11px; white-space:nowrap; }
+.business-quantities > span { display:block; line-height:19px; }
+.business-ranking .empty-state { padding:35px 20px; }
+
+/* The badge counts actionable items; it is never an always-on decorative dot. */
+.topbar .notification-button { position:relative; display:inline-flex; width:30px; height:30px; flex:none; margin-right:5px; overflow:visible; color:#516979; border:1px solid #d6e0e7; background:rgba(255,255,255,.75); border-radius:6px; }
+.topbar .notification-button .icon svg { width:16px; height:16px; }
+.topbar .notification-button:hover { background:#fff; border-color:#a8bbc9; }
+.notification-badge { position:absolute; top:-9px; right:-9px; display:flex; align-items:center; justify-content:center; min-width:21px; height:21px; padding:0 4px; border:2px solid #f3f6f8; border-radius:12px; background:#c43c4a; color:white; font:650 11px/17px var(--font-ui); letter-spacing:-.03em; box-shadow:0 1px 3px rgba(135,31,44,.2); pointer-events:none; }
+.notification-count-heading { margin:0 0 5px; color:var(--ui-muted); font-size:12px; }
+@media(max-width:1100px) {
+  .business-metrics { gap:20px; }
+  .business-rankings { grid-template-columns:minmax(0,1fr); }
+  .business-task-links { gap:14px; }
+}
+@media(max-width:720px) {
+  .business-heading { align-items:center; gap:10px; }
+  .business-heading h1 { font-size:21px; }
+  .business-periods { gap:0; }
+  .business-periods .tab { font-size:11px; padding:7px 8px 10px; }
+  .business-tasks { padding:12px 14px; gap:9px; }
+  .business-tasks-label { width:100%; }
+  .business-task-links { width:100%; gap:0; justify-content:space-between; }
+  .business-task-link { font-size:10px; gap:3px; }
+  .business-task-link strong { font-size:14px; margin-left:2px; }
+  .business-overdue { margin-left:0; margin-top:2px; }
+  .business-period-caption { flex-wrap:wrap; gap:4px; }
+  .business-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 22px; margin:20px 0 25px; }
+  .business-metric-value { font-size:27px; min-height:35px; margin:8px 0 5px; }
+  .business-metric-label { font-size:11px; }
+  .business-metric-value.is-unknown { font-size:22px; }
+  .business-comparison { font-size:10px; }
+  .business-chart { padding:10px 22px 20px 55px; }
+  .business-chart-plot { height:175px; }
+  .business-chart-tooltip { width:145px; padding:10px; }
+  .business-chart-tooltip > span { font-size:12px; }
+  .business-chart-grid > span { font-size:9px; right:calc(100% + 8px); }
+  .business-chart-empty { min-height:200px; }
+  .business-trend .section-header { padding-bottom:10px; }
+  .business-custom-range { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
+  .business-custom-range .ui-date { width:100%; min-width:0; }
+  .business-custom-range > .btn { grid-column:1 / -1; }
+  .business-data-note { font-size:11px; }
+  .topbar .topbar-right { gap:9px; }
+  .topbar .topbar-right > .notification-button { display:inline-flex; width:30px; height:30px; margin-right:6px; }
+}
+@media(prefers-reduced-motion:reduce) { .business-chart-tooltip { transition:none; } }
+.business-compare-period { display:inline-block; margin-left:12px; font-family:var(--font-ui); }
+.business-chart-axis.is-single { justify-content:center; }
+@media(max-width:720px) { .business-compare-period { margin-left:9px; } }
+.business-rankings { align-items:start; }
+.business-trend { overflow:hidden; }

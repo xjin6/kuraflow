@@ -1,0 +1,15 @@
+.cloud-entry{min-height:100dvh;display:grid;place-items:center;padding:32px 20px;background:var(--page-bg,#f5f6f2)}
+.cloud-login{width:min(100%,480px);padding:44px 38px}
+.cloud-wordmark{font-size: 28px;font-weight:700;color: #173f35;margin-bottom:42px;display:flex;align-items:baseline;gap:12px}
+.cloud-wordmark span{font-size: 13px;letter-spacing:.2em;font-weight:500}
+.cloud-login h1{font-size: 27px;margin:12px 0 15px;color: #173f35}
+.cloud-login p{line-height:1.8;color: #798874}
+.cloud-login-button{width:100%;justify-content:center;margin:12px 0 14px;min-height:48px}
+.cloud-login-error{color: #af5738;line-height:1.6;overflow-wrap:anywhere;min-height:20px}
+.cloud-session-actions{display:flex;align-items:center;gap:12px}
+.cloud-online-label{font-size: 13px;color: #69875d;white-space:nowrap}
+.cloud-invite-link{width:100%;resize:vertical;overflow-wrap:anywhere;min-height:100px}
+.cloud-session-error{position:fixed;inset:0;z-index:2000;background:#f5f6f2;display:grid;place-items:center;padding:24px}
+.cloud-session-error .section-card{padding:32px;max-width:440px;text-align:center;line-height:1.8}
+.cloud-reconnect{font-size: 13px;color: #ad744f}
+@media(max-width:600px){.cloud-login{padding:30px 24px}.cloud-online-label{display:none}.cloud-session-actions{gap:5px}.store-card-footer{flex-wrap:wrap}}
