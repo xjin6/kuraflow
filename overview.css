@@ -15,18 +15,78 @@
 .business-custom-range > label > span { color:var(--ui-muted); font-size:12px; }
 .business-custom-range .ui-date { width:166px; }
 .business-date-separator { height:40px; display:flex; align-items:center; color:var(--ui-muted); font-size:12px; }
-.business-tasks { display:flex; align-items:center; flex-wrap:wrap; gap:12px 26px; padding:13px 18px; background:rgba(255,255,255,.66); border:1px solid var(--ui-border); border-radius:6px; margin-bottom:22px; }
-.business-tasks-label { display:flex; align-items:baseline; gap:9px; flex:none; }
-.business-tasks-label strong { color:var(--ui-text); font-size:12px; font-weight:550; }
-.business-tasks-label > span { color:var(--ui-muted); font:11px var(--font-data); }
-.business-task-links { display:flex; align-items:center; flex-wrap:wrap; gap:20px; }
-.business-task-link { display:inline-flex; align-items:baseline; gap:5px; padding:4px 0; border:0; background:none; color:var(--ui-accent); font-size:12px; }
-.business-task-link strong { font:550 15px var(--font-data); margin-left:3px; }
-.business-task-link:hover:not(:disabled) { color:#173e58; text-decoration:underline; text-underline-offset:5px; }
-.business-task-link:disabled { color:var(--ui-muted); cursor:default; }
-.business-task-link.has-issue, .business-overdue { color:#a74d50; }
-.business-overdue { display:flex; align-items:center; gap:5px; margin-left:auto; border:0; padding:4px 0; background:none; font-size:11px; }
-.business-overdue .icon svg { width:13px; height:13px; }
+.task-page { width:100%; max-width:840px; }
+.task-source-tabs .task-tab-count { color:var(--ui-muted); font:500 12px var(--font-data); }
+.task-source-tabs .active .task-tab-count { color:inherit; }
+.business-tasks { width:100%; max-width:840px; padding:17px 20px 10px; margin-bottom:22px; }
+.business-tasks-header { display:grid; grid-template-columns:minmax(0,1fr) 112px; align-items:center; gap:14px; min-height:40px; }
+.business-tasks-total { color:var(--ui-muted); font:500 13px var(--font-data); }
+.business-tasks-actions { display:flex; align-items:center; justify-content:flex-end; gap:14px; min-width:0; min-height:40px; white-space:nowrap; }
+.business-tasks-actions .text-button { display:inline-flex; align-items:center; gap:4px; font-size:12px; }
+.business-tasks-actions .btn { min-height:40px; padding:7px 11px; font-size:12px; }
+.business-tasks-actions .icon svg { width:14px; height:14px; }
+.business-task-action-placeholder { visibility:hidden; pointer-events:none; user-select:none; }
+/* Both source tabs share a single toolbar row, including its reserved action
+   slot. Narrow screens scroll filters within that row instead of changing height. */
+.business-task-filters { display:flex; align-items:center; flex-wrap:nowrap; gap:17px; min-width:0; min-height:40px; margin:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.business-task-filters::-webkit-scrollbar { display:none; }
+.business-task-filter { position:relative; display:inline-flex; align-items:center; flex:none; gap:6px; min-height:40px; padding:6px 0; border:0; background:none; color:var(--ui-muted); font:12px var(--font-ui); white-space:nowrap; cursor:pointer; }
+.business-task-filter strong { font:500 12px var(--font-data); color:inherit; }
+.business-task-filter.active { color:var(--ui-accent); }
+.business-task-filter.active::after { content:''; position:absolute; bottom:2px; left:0; right:0; height:2px; background:currentColor; border-radius:1px; }
+.business-task-filter:hover { color:var(--ui-accent); }
+.business-task-filter:focus-visible { outline:2px solid var(--ui-accent); outline-offset:-2px; border-radius:2px; }
+.business-todo-list { list-style:none; margin:0; padding:0; }
+.business-todo-row, .business-task-list-heading { display:grid; grid-template-columns:minmax(0,1fr) 128px 88px; align-items:center; gap:14px; }
+.business-task-list-heading { margin:18px 0 4px; color:var(--ui-muted); font-size:11px; }
+.business-task-list-heading > span:first-child { display:flex; align-items:baseline; gap:8px; }
+.business-task-list-heading > span:last-child { text-align:center; }
+.business-todo-row { padding:11px 0; }
+.business-todo-copy { min-width:0; }
+.business-todo-title { display:flex; align-items:center; flex-wrap:wrap; gap:5px 10px; }
+.business-todo-title strong { color:var(--ui-text); font-size:13px; font-weight:550; line-height:1.6; overflow-wrap:anywhere; }
+.business-task-kind { color:var(--ui-muted); font-size:11px; white-space:nowrap; }
+.business-task-source { display:inline-flex; align-items:center; flex-shrink:0; min-height:19px; padding:0 5px; border:1px solid #d9e1e7; border-radius:4px; color:#6d7d89; font-size:10px; font-weight:500; line-height:17px; white-space:nowrap; }
+.business-task-source.is-manual { border-color:#dcd5e9; color:#78648d; background:#f9f7fc; }
+.business-todo-row.is-urgent .business-task-kind { color:#a74d50; }
+.business-task-description { margin:3px 0 4px; color:var(--ui-muted); font-size:12px; line-height:1.6; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.business-task-meta { display:flex; align-items:baseline; flex-wrap:wrap; gap:3px 10px; color:var(--ui-muted); font-size:11px; line-height:1.6; }
+.business-task-meta > span:first-child { font-family:var(--font-data); }
+.business-task-deadline { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; min-width:0; min-height:40px; padding:4px 0; color:var(--ui-muted); font-size:12px; line-height:1.6; }
+.business-due-value { font-variant-numeric:tabular-nums; }
+.business-due-status { font-size:11px; }
+.business-task-deadline.is-overdue { color:#a44d54; }
+.business-task-deadline.is-today { color:var(--ui-accent); }
+.business-task-deadline.is-unset { font-size:11px; }
+.business-due-button { width:100%; border:0; border-radius:4px; background:none; font-family:var(--font-ui); text-align:left; cursor:pointer; }
+.business-due-button:hover .business-due-value { text-decoration:underline; text-underline-offset:3px; }
+.business-due-button:focus-visible { outline:2px solid var(--ui-accent); outline-offset:3px; }
+.business-todo-row > .btn { white-space:nowrap; min-height:34px; font-size:12px; padding:7px 11px; }
+.business-todo-row > .btn .icon svg { width:14px; height:14px; }
+.business-manual-check { display:grid; place-items:center; justify-self:center; width:44px; height:44px; padding:0; border:0; border-radius:6px; color:var(--ui-accent); background:transparent; cursor:pointer; }
+.business-manual-check > span { display:grid; place-items:center; width:21px; height:21px; border:1.5px solid #acb8c2; border-radius:5px; transition:border-color .16s ease, opacity .16s ease; }
+.business-manual-check .icon { opacity:0; }
+.business-manual-check .icon svg { width:14px; height:14px; }
+.business-manual-check:hover > span { border-color:var(--ui-accent); }
+.business-manual-check:focus-visible { outline:2px solid var(--ui-accent); outline-offset:1px; }
+.business-manual-check[aria-checked="true"] > span { border-color:#ccd4db; color:#96a4af; }
+.business-manual-check[aria-checked="true"] .icon { opacity:1; }
+.business-manual-check:disabled { opacity:.45; cursor:wait; }
+.business-todo-row.is-completed .business-todo-copy { opacity:.5; }
+.business-todo-row.is-completed .business-task-deadline { color:#98a4af; }
+.business-todo-row.is-completed .business-todo-title strong { text-decoration:line-through; text-decoration-color:#b4bdc6; }
+.manual-task-modal { max-width:480px; }
+.manual-task-fields { display:grid; gap:15px; }
+.manual-task-fields .field { margin:0; }
+.manual-task-fields label { display:flex; align-items:center; gap:8px; }
+.manual-task-date-field { max-width:230px; }
+.manual-task-date-title { margin:0; color:var(--ui-text); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.manual-task-optional { color:var(--ui-muted); font-size:11px; font-weight:400; }
+.manual-task-fields textarea { min-height:86px; resize:vertical; }
+.manual-task-fields .inline-editor-feedback:empty { display:none; }
+.business-tasks-empty { display:flex; align-items:center; gap:9px; padding:22px 0 25px; color:var(--ui-muted); font-size:12px; }
+.business-tasks-empty > .icon { color:#879ba8; }
+.business-todo-list.is-full .business-task-description { display:block; overflow:visible; }
 .business-period-caption { display:flex; justify-content:space-between; gap:12px; color:var(--ui-muted); font-size:11px; }
 .business-period-caption > span:first-child { font-family:var(--font-data); }
 .business-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:30px; margin:18px 0 28px; }
@@ -91,7 +151,7 @@
 .business-quantities > span { display:block; line-height:19px; }
 .business-ranking .empty-state { padding:35px 20px; }
 
-/* The badge counts actionable items; it is never an always-on decorative dot. */
+/* The management badge counts the current account’s unread event notifications. */
 .topbar .notification-button { position:relative; display:inline-flex; width:30px; height:30px; flex:none; margin-right:5px; overflow:visible; color:#516979; border:1px solid #d6e0e7; background:rgba(255,255,255,.75); border-radius:6px; }
 .topbar .notification-button .icon svg { width:16px; height:16px; }
 .topbar .notification-button:hover { background:#fff; border-color:#a8bbc9; }
@@ -100,19 +160,29 @@
 @media(max-width:1100px) {
   .business-metrics { gap:20px; }
   .business-rankings { grid-template-columns:minmax(0,1fr); }
-  .business-task-links { gap:14px; }
 }
 @media(max-width:720px) {
   .business-heading { align-items:center; gap:10px; }
   .business-heading h1 { font-size:21px; }
   .business-periods { gap:0; }
   .business-periods .tab { font-size:11px; padding:7px 8px 10px; }
-  .business-tasks { padding:12px 14px; gap:9px; }
-  .business-tasks-label { width:100%; }
-  .business-task-links { width:100%; gap:0; justify-content:space-between; }
-  .business-task-link { font-size:10px; gap:3px; }
-  .business-task-link strong { font-size:14px; margin-left:2px; }
-  .business-overdue { margin-left:0; margin-top:2px; }
+  .business-tasks { padding:14px 14px 8px; }
+  .business-tasks-actions { gap:9px; }
+  .business-task-filters { gap:15px; }
+  .task-source-tabs .task-tab-count { font-size:11px; }
+  .task-page-heading .management-heading-main { flex-wrap:wrap; }
+  .task-page-heading .task-source-tabs { margin-left:auto; }
+  .business-tasks-header { grid-template-columns:minmax(0,1fr) 104px; gap:10px; }
+  .business-task-list-heading { display:none; }
+  .business-todo-list { margin-top:10px; }
+  .business-todo-row { grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; padding:11px 0; }
+  .business-todo-copy { grid-column:1; grid-row:1; }
+  .business-task-deadline { grid-column:1; grid-row:2; flex-direction:row; align-items:center; justify-content:flex-start; flex-wrap:wrap; gap:3px 8px; min-height:32px; }
+  .business-todo-row > .btn, .business-manual-check { grid-column:2; grid-row:1 / span 2; }
+  .business-due-button { width:fit-content; max-width:100%; }
+  .business-todo-row > .btn { min-height:40px; padding:8px 10px; }
+  .business-todo-row > .btn .icon { display:none; }
+  .business-task-meta { gap:2px 7px; }
   .business-period-caption { flex-wrap:wrap; gap:4px; }
   .business-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 22px; margin:20px 0 25px; }
   .business-metric-value { font-size:27px; min-height:35px; margin:8px 0 5px; }

@@ -52,6 +52,7 @@ export function createSettlementUI(ctx) {
     el.disabled=true; el.textContent='生成中…';
     try {
       const {createOrderPDF}=await import('./order-pdf.js');
+      if(ctx.getDocumentProfile)record.issuer=(await ctx.getDocumentProfile()).issuer;
       const bytes=await createOrderPDF(record);
       ctx.download(`${record.store.name}_${record.order.deliveryDate}_${record.id}_纳品书.pdf`.replace(/[\\/:*?"<>|]/g,'_'),bytes,'application/pdf');
       ctx.toast('PDF 已导出。');

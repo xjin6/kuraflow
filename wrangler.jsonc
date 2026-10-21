@@ -4,7 +4,8 @@
   "main": "backend/worker.js",
   "compatibility_date": "2026-10-08",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "enable_request_signal"
   ],
   "workers_dev": true,
   "assets": {
@@ -44,5 +45,9 @@
       "head_sampling_rate": 0.01
     }
   },
-  "account_id": "416d8e8c519ddc0a60ead4fc98a2ae14"
+  "account_id": "416d8e8c519ddc0a60ead4fc98a2ae14",
+  "alias": {
+    "./business-data.js": "./cloud-seed.js"
+  },
+  "preview_urls": false
 }

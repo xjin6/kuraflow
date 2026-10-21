@@ -97,6 +97,7 @@ export function createCloudModel(session) {
         model.revision = data.revision ?? model.revision;
         keys.delete(fingerprint);
         model.save();
+        window.dispatchEvent(new CustomEvent('kuraflow-notifications-changed'));
         return data.result;
       } catch (error) {
         if (error.status && error.status < 500) keys.delete(fingerprint);
@@ -112,7 +113,7 @@ export function createCloudModel(session) {
     pending.set(fingerprint, operation);
     return operation;
   };
-  for (const type of ['setWarehouseStock', 'setWarehouseUnitStock', 'setStoreUnitAllocation', 'setStoreAllocation', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setPrice', 'deleteStore', 'setStock', 'packLine', 'confirmPackLine', 'setStage', 'remindOrder', 'recordIssue', 'confirmDelivery', 'importProducts', 'deleteProduct', 'restoreProduct']) {
+  for (const type of ['setWarehouseStock', 'setWarehouseUnitStock', 'setStoreUnitAllocation', 'setStoreAllocation', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setPrice', 'deleteStore', 'setStock', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'resolveOrderIssue', 'setStage', 'remindOrder', 'recordIssue', 'confirmDelivery', 'importProducts', 'deleteProduct', 'restoreProduct', 'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask']) {
     model[type] = (...args) => model.command(type, args);
   }
   model.getStoreAccessCode = async storeId => (await cloudRequest('/api/admin/store-code',{storeId})).accessCode;
@@ -157,7 +158,10 @@ export function createCloudModel(session) {
     const data = await cloudRequest('/api/state');
     // A command might have begun while the refresh request was in flight.
     if (model.pending || model.revision !== before) return false;
-    if (data.revision === model.revision) return false;
+    const profileKeys=['avatarUrl','avatarVersion','organizationAvatarUrl','organizationAvatarVersion','displayName'];
+    const profileChanged=Boolean(data.principal&&profileKeys.some(key=>data.principal[key]!==session.principal[key]));
+    if(data.principal)for(const key of profileKeys)if(Object.hasOwn(data.principal,key))session.principal[key]=data.principal[key];
+    if (data.revision === model.revision) return profileChanged;
     apply(data.state); model.revision = data.revision;
     return true;
   };

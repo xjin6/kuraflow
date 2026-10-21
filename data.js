@@ -2,6 +2,7 @@ import {
   materialProducts, materialStores, materialPrices, materialQuoteMeta,
   materialDocuments, exampleOrderLines, company, materialSummary,
 } from './business-data.js';
+import { isLegacyShortageNote, isPackingShortage, packingLineDone } from './notification-domain.js';
 
 export const DEMO_DATE = '2026-10-08';
 export const STORAGE_KEY = 'kuraflow-business-preview-v2';
@@ -15,6 +16,20 @@ const TAX_BASES = ['unspecified', 'exclusive', 'inclusive'];
 const clone = value => JSON.parse(JSON.stringify(value));
 const roundMoney = value => Math.round((value + Number.EPSILON) * 100) / 100;
 const isBlank = value => value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+function syncPackingIssues(order, item, done, now = new Date().toISOString()) {
+  if (done && isPackingShortage(item)) {
+    item.packingIssue = { type: 'shortage', reportedAt: item.packingIssue?.reportedAt || now,
+      ...item.packingIssue, status: 'resolved', resolution: 'packed', updatedAt: now, resolvedAt: now };
+  } else if (!done && item.packingIssue?.resolution === 'packed') {
+    item.packingIssue = { ...item.packingIssue, status: 'open', updatedAt: now };
+    delete item.packingIssue.resolvedAt; delete item.packingIssue.resolution;
+  }
+  if (order.issue && !order.issueResolvedAt && order.items.every(packingLineDone)) {
+    order.issueResolvedAt = now; order.issueResolution = 'packed';
+  } else if (!done && order.issueResolution === 'packed') {
+    delete order.issueResolvedAt; delete order.issueResolution;
+  }
+}
 export const isWeightUnit = unit => String(unit).trim().toUpperCase() === 'KG';
 const roundQuantity = (value, unit) => {
   // Inventory conversions need more precision than editable quantities. A
@@ -175,7 +190,7 @@ function seedState() {
     inventory: Object.fromEntries(materialProducts.map(product => [product.id, product.stock ?? null])),
     storeAllocations: {}, unitQuotes: {}, cartUnits: {},
     orders: [], documents: clone(materialDocuments), materialSummary: clone(materialSummary),
-    priceHistory: [], cart: {}, activeStoreId: materialStores[0]?.id || '', reminders: [],
+    priceHistory: [], cart: {}, activeStoreId: materialStores[0]?.id || '', reminders: [], manualTasks: [],
     settings: {
       companyName: typeof company === 'string' ? company : company.name || company.companyName || '每度商事',
       cutoffTime: '22:00', deliveryWindow: '09:00–12:00', currency: 'JPY', language: 'zh-CN',
@@ -200,6 +215,28 @@ function isDate(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function manualTaskDate(value) {
+  if(typeof value!=='string'||!isDate(value)||value<'1000-01-01')throw new Error('请选择有效的截止日期。');
+  return value;
+}
+function manualTaskDetails(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    || Object.keys(value).some(key => !['title', 'note', 'dueDate'].includes(key))) {
+    throw new Error('待办内容格式不正确。');
+  }
+  const normalize = (input, label, max, required = false) => {
+    if (input == null && !required) return '';
+    if (typeof input !== 'string' || input.length > max) throw new Error(`${label}最多 ${max} 字。`);
+    const text = input.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim();
+    if (required && !text) throw new Error(`请填写${label}。`);
+    return text;
+  };
+  const dueDate = manualTaskDate(value.dueDate);
+  return { title: normalize(value.title, '待办事项', 120, true).replace(/[\r\n\t]+/g, ' '),
+    note: normalize(value.note, '备注', 500), dueDate };
+}
+
 export class KitchenModel {
   constructor() {
     this.localPreview = true;
@@ -217,6 +254,7 @@ export class KitchenModel {
         this.state.documents = Array.isArray(saved.documents) ? saved.documents : clone(materialDocuments);
         this.state.priceHistory = Array.isArray(saved.priceHistory) ? saved.priceHistory : [];
         this.state.reminders = Array.isArray(saved.reminders) ? saved.reminders : [];
+        this.state.manualTasks = Array.isArray(saved.manualTasks) ? saved.manualTasks : [];
         this.state.cart = saved.cart && typeof saved.cart === 'object' ? saved.cart : {};
       }
     } catch { /* Recover to the source-backed preview when saved state is invalid. */ }
@@ -563,6 +601,53 @@ export class KitchenModel {
     }, 0));
   }
   status(order) { return order.stage; }
+  addManualTask(value) {
+    const details = manualTaskDetails(value);
+    const todos = this.state.manualTasks || [];
+    if (todos.length >= 1000) throw new Error('待办记录已达当前上限，请联系平台处理。');
+    const now = new Date().toISOString();
+    const todo = { id: `todo-${crypto.randomUUID()}`, ...details, source: 'manual',
+      createdAt: now, updatedAt: now, completedAt: null, deletedAt: null };
+    this.state.manualTasks = [...todos, todo];
+    this.save();
+    return todo;
+  }
+  setManualTaskDone(id, done) {
+    if (typeof done !== 'boolean') throw new Error('请选择有效的待办状态。');
+    const todo = this.state.manualTasks?.find(row => row.id === id && !row.deletedAt);
+    if (!todo || todo.source !== 'manual') throw new Error('手动待办不存在。');
+    if (Boolean(todo.completedAt) === done) return todo;
+    const now = new Date().toISOString();
+    todo.completedAt = done ? now : null;
+    todo.updatedAt = now;
+    this.save();
+    return todo;
+  }
+  setManualTaskDueDate(id, dueDate) {
+    const value=manualTaskDate(dueDate);
+    const todo=this.state.manualTasks?.find(row=>row.id===id&&!row.deletedAt);
+    if(!todo||todo.source!=='manual')throw new Error('手动待办不存在。');
+    if(todo.dueDate===value)return todo;
+    todo.dueDate=value;todo.updatedAt=new Date().toISOString();this.save();return todo;
+  }
+  deleteManualTask(id) {
+    const todo = this.state.manualTasks?.find(row => row.id === id);
+    if (!todo || todo.source !== 'manual') throw new Error('手动待办不存在。');
+    if (todo.deletedAt) return todo;
+    todo.deletedAt = new Date().toISOString();
+    todo.updatedAt = todo.deletedAt;
+    this.save();
+    return todo;
+  }
+  restoreManualTask(id) {
+    const todo = this.state.manualTasks?.find(row => row.id === id);
+    if (!todo || todo.source !== 'manual') throw new Error('手动待办不存在。');
+    if (!todo.deletedAt) return todo;
+    todo.deletedAt = null;
+    todo.updatedAt = new Date().toISOString();
+    this.save();
+    return todo;
+  }
   save() {
     try { this.storage?.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch { /* Keep the preview usable without persistence. */ }
     return this.state;
@@ -637,6 +722,10 @@ export class KitchenModel {
       throw new Error('尚有商品未配齐，请核对每项数量后再更新配送状态。');
     }
     order.stage = stage;
+    if (stage === 'ready') {
+      order.readyAt = new Date().toISOString();
+      for (const item of order.items) syncPackingIssues(order, item, true, order.readyAt);
+    }
     if (stage === 'delivering') order.departedAt = new Date().toISOString();
     if (stage === 'delivered') order.deliveredAt = new Date().toISOString();
     this.save();
@@ -655,7 +744,9 @@ export class KitchenModel {
     if (item.packedQty !== packedQty) item.packingConfirmed = false;
     item.packedQty = packedQty;
     if (packedQty > 0 && order.stage === 'pending') order.stage = 'packing';
-    if (order.items.every(line => line.packedQty === line.qty)) delete order.issue;
+    // A quantity edit is not a packing confirmation. Keep exception history and
+    // reopen only exceptions that were resolved by the original checkmark.
+    if (!packingLineDone(item)) syncPackingIssues(order, item, false);
     this.save();
     return order;
   }
@@ -667,8 +758,101 @@ export class KitchenModel {
     const item = order.items.find(line => line.productId === productId);
     if (!item) throw new Error('订单中没有这项商品。');
     if (item.packedQty !== item.qty) throw new Error('实配数量尚未补全，请先填写全部配货数量。');
+    if (isPackingShortage(item) && !item.packingIssue) {
+      const now = new Date().toISOString();
+      item.packingIssue = { type: 'shortage', status: 'open', reportedAt: now, updatedAt: now };
+    }
     item.packingConfirmed = true;
     if (order.stage === 'pending') order.stage = 'packing';
+    syncPackingIssues(order, item, true);
+    this.save();
+    return order;
+  }
+
+  setPackLineDone(orderId, productId, done) {
+    if (typeof done !== 'boolean') throw new Error('请选择有效的配货状态。');
+    const order = this.state.orders.find(item => item.id === orderId);
+    if (!order) throw new Error('订单不存在。');
+    if (!['pending', 'packing'].includes(order.stage)) throw new Error('订单已进入配送流程，不能修改配货状态。');
+    const item = order.items.find(line => line.productId === productId);
+    if (!item) throw new Error('订单中没有这项商品。');
+    // The checked state confirms the saved order quantity in one operation.
+    // An explicit value is safe to repeat after a lost network response.
+    // Capture legacy shortages before the completed quantity masks them.
+    if (done && isPackingShortage(item) && !item.packingIssue) {
+      const now = new Date().toISOString();
+      item.packingIssue = { type: 'shortage', status: 'open', reportedAt: now, updatedAt: now };
+    }
+    item.packedQty = done ? item.qty : 0;
+    item.packingConfirmed = done;
+    if (done && order.stage === 'pending') order.stage = 'packing';
+    syncPackingIssues(order, item, done);
+    this.save();
+    return order;
+  }
+
+  setPackingNote(orderId, productId, note, type) {
+    if (typeof note !== 'string' || note.length > 1000) throw new Error('配货备注请填写有效文字，最多 1000 字。');
+    if (type !== undefined && !['shortage', 'other'].includes(type)) throw new Error('请选择有效的配货备注类型。');
+    const order = this.state.orders.find(item => item.id === orderId);
+    if (!order) throw new Error('订单不存在。');
+    if (!['pending', 'packing'].includes(order.stage)) throw new Error('订单已进入配送流程，不能修改配货备注。');
+    const item = order.items.find(line => line.productId === productId);
+    if (!item) throw new Error('订单中没有这项商品。');
+    const value = note.trim();
+    const nextType = type || (isLegacyShortageNote(value) ? 'shortage' : 'other');
+    // Re-saving an unchanged resolved note must not create a new shortage.
+    if (value === (item.packingNote || '') && (!value || nextType === (item.packingIssue?.type || (isLegacyShortageNote(value) ? 'shortage' : 'other')))) return order;
+    const now = new Date().toISOString();
+    if (value) {
+      item.packingNote = value;
+      item.packingIssue = { type: nextType, status: 'open', reportedAt: now, updatedAt: now };
+      if (nextType === 'shortage' && packingLineDone(item)) {
+        // Reporting a new shortage after checking requires another physical check.
+        item.packingConfirmed = false;
+        syncPackingIssues(order, item, false, now);
+      }
+    } else {
+      delete item.packingNote;
+      if (item.packingIssue) item.packingIssue = { ...item.packingIssue, status: 'resolved', resolution: 'cleared', updatedAt: now, resolvedAt: now };
+    }
+    this.save();
+    return order;
+  }
+
+  resolvePackingIssue(orderId, productId) {
+    const order = this.state.orders.find(item => item.id === orderId);
+    if (!order) throw new Error('订单不存在。');
+    if (!['pending', 'packing', 'ready', 'delivering'].includes(order.stage)) throw new Error('已送达订单不能修改。');
+    const item = order.items.find(line => line.productId === productId);
+    if (!item) throw new Error('订单中没有这项商品。');
+    if (!isPackingShortage(item)) return order;
+    const now = new Date().toISOString();
+    item.packingIssue = { type: 'shortage', reportedAt: now, ...item.packingIssue,
+      status: 'resolved', resolution: 'manual', updatedAt: now, resolvedAt: now };
+    this.save();
+    return order;
+  }
+
+  recordIssue(orderId, note) {
+    if (typeof note !== 'string' || !note.trim() || note.trim().length > 1000) throw new Error('异常说明请填写有效文字，最多 1000 字。');
+    const order = this.state.orders.find(item => item.id === orderId);
+    if (!order) throw new Error('订单不存在。');
+    if (order.stage === 'delivered') throw new Error('已送达订单不能修改。');
+    const value = note.trim();
+    if (order.issue === value && !order.issueResolvedAt) return order;
+    order.issue = value; order.issueReportedAt = new Date().toISOString();
+    delete order.issueResolvedAt; delete order.issueResolution;
+    this.save();
+    return order;
+  }
+
+  resolveOrderIssue(orderId) {
+    const order = this.state.orders.find(item => item.id === orderId);
+    if (!order) throw new Error('订单不存在。');
+    if (order.stage === 'delivered') throw new Error('已送达订单不能修改。');
+    if (!order.issue || order.issueResolvedAt) return order;
+    order.issueResolvedAt = new Date().toISOString(); order.issueResolution = 'manual';
     this.save();
     return order;
   }

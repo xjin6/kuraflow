@@ -1,0 +1,50 @@
+.notifications-modal { width:min(620px,calc(100vw - 32px)); }
+.notifications-modal .modal-body { padding:4px 22px 12px; }
+.notifications-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.notifications-toolbar .tabs { margin:0; }
+.notifications-toolbar .tab { min-height:42px; padding:8px 10px; font-size:12px; }
+.notifications-toolbar .tab span { margin-left:4px; font-variant-numeric:tabular-nums; color:#8495a3; }
+.notifications-toolbar > .text-button { font-size:11px; white-space:nowrap; }
+.notifications-event-list { max-height:min(54vh,500px); min-height:245px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.notifications-event-list ol { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:5px; }
+.notification-event { display:flex; align-items:flex-start; gap:12px; padding:13px 10px; border-radius:6px; background:transparent; }
+.notification-event.is-unread { background:#f1f4f8; }
+.notification-event-icon { display:grid; place-items:center; width:28px; height:28px; flex:none; color:#8497a7; margin-top:1px; }
+.notification-event-icon svg { width:18px; height:18px; }
+.notification-event-icon.has-issue { color:#ad7a60; }
+.notification-event-content { min-width:0; flex:1; }
+.notification-event-heading { display:flex; align-items:center; gap:8px; }
+.notification-event-heading strong { font-size:13px; line-height:1.6; font-weight:550; color:#394e60; overflow-wrap:anywhere; }
+.notification-unread-dot { width:6px; height:6px; flex:none; border-radius:50%; background:#6684ad; }
+.notification-event-content > p { margin:4px 0 7px; color:#788a99; font-size:12px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
+.notification-event-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; color:#91a0ac; font-size:10px; line-height:1.6; }
+.notification-event-state { margin-left:auto; color:#7a8d9b; }
+.notification-event-state.is-resolved { color:#98a49f; }
+.notification-event-actions { display:flex; align-items:center; gap:16px; margin-top:6px; }
+.notification-event-actions .btn { min-height:28px; padding:3px 0; font-size:11px; }
+.notification-event-actions .text-button { padding:3px 0; color:#8192a0; font-size:11px; }
+.notifications-empty { min-height:245px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:13px; color:#9aa8b2; }
+.notifications-empty > svg { width:25px; height:25px; }
+.notifications-empty strong { color:#748997; font-size:13px; font-weight:500; }
+.notifications-empty .text-button { font-size:12px; }
+.notifications-more { display:block; margin:10px auto 0; font-size:12px; }
+.notifications-error { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 6px; font-size:12px; color:#aa777b; }
+.notifications-error .text-button { flex:none; font-size:12px; }
+.packing-issue-state { display:inline-flex; align-items:center; gap:6px; color:#a6745b; font-size:11px; }
+.packing-issue-state.is-resolved { color:#8fa097; }
+.packing-note-content { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.packing-note-content > span:not(.packing-issue-state) { min-width:0; flex:1; overflow-wrap:anywhere; }
+.packing-note-content .text-button { margin-left:auto; padding:3px 0; font-size:11px; white-space:nowrap; }
+.order-issue-notice { display:flex; align-items:center; gap:10px; }
+.order-issue-notice > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.order-issue-notice .text-button { flex:none; white-space:nowrap; }
+.order-issue-notice.is-resolved { color:#889990; background:transparent; }
+@media(max-width:720px) {
+  .notifications-modal { width:calc(100vw - 24px); }
+  .notifications-modal .modal-body { padding:2px 14px 12px; }
+  .notifications-event-list { max-height:58dvh; }
+  .notification-event { padding:11px 8px; gap:8px; }
+  .notification-event-actions .btn,.notification-event-actions .text-button { min-height:38px; display:inline-flex; align-items:center; }
+  .notification-event-state { margin-left:0; }
+  .packing-note-content .text-button { min-height:36px; }
+}

@@ -24,7 +24,7 @@ await build({entryPoints:[path.join(root,'cloud-bootstrap.js')],outdir:path.join
  html=html.replace('<link rel="stylesheet" href="./styles.css" />','<link rel="stylesheet" href="/cloud.css" /><link rel="stylesheet" href="./styles.css" />').replace('<script type="module" src="./app.js"></script>',`<script type="module" src="${script}"></script>`);
  await fs.writeFile(path.join(target,'index.html'),html);
 });
-for(const file of ['styles.css','catalogue-units.css','store-ui.css','readability.css','ui-system.css','ui-controls.css','order-ui.css','visual-refresh.css','settlement.css','overview.css','accounts.css','cloud.css','favicon.svg'])await fs.copyFile(path.join(root,file),path.join(target,file));
+for(const file of ['styles.css','catalogue-units.css','store-ui.css','readability.css','ui-system.css','ui-controls.css','order-ui.css','visual-refresh.css','settlement.css','overview.css','accounts.css','flow-ui.css','notifications.css','flow-mark.svg','cloud.css','favicon.svg'])await fs.copyFile(path.join(root,file),path.join(target,file));
 await fs.cp(path.join(root,'public/product-images'),path.join(target,'public/product-images'),{recursive:true});
 await fs.cp(path.join(root,'public/fonts'),path.join(target,'public/fonts'),{recursive:true});
 await fs.mkdir(path.join(target,'public/vendor'),{recursive:true});

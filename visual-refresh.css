@@ -734,6 +734,21 @@ body { font-family:var(--font-ui); background:var(--bg); }
 
 /* Shared store identity uses the same live photo and address in both workspaces. */
 .workspace-avatar .store-avatar { width:28px; height:28px; flex:none; }
+.sidebar .profile-entry { width:100%; border-right:0; border-bottom:0; border-left:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.sidebar .profile-entry:hover strong { color:#fff; }
+.sidebar .profile-entry:focus-visible { outline:2px solid #bed0df; outline-offset:5px; border-radius:4px; }
+.sidebar .profile-entry > .icon:last-child { flex:none; color:#b2c1ce; }
+.sidebar .profile-entry > .icon:last-child svg { width:14px; height:14px; }
+.workspace-avatar-button { border:0; padding:0; cursor:pointer; }
+.workspace-avatar-button:focus-visible, .personal-profile-button:focus-visible { outline:2px solid var(--ui-accent); outline-offset:3px; }
+.sidebar .workspace-avatar-button:focus-visible { outline-color:#bed0df; }
+.user-avatar, .workspace-avatar, .topbar-user { overflow:hidden; }
+.user-avatar img, .workspace-avatar > img, .topbar-user img { display:block; width:100%; height:100%; object-fit:cover; border-radius:inherit; }
+.personal-profile-button { cursor:pointer; }
+.store-card-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex:none; }
+.store-card-tools .store-team-button { width:32px; height:32px; }
+.store-card-tools .store-team-button .icon svg { width:16px; height:16px; }
+@media(max-width:720px) { .store-card-tools .store-team-button { width:40px; height:40px; } }
 .client-store { min-width:0; }
 .client-store > div { min-width:0; }
 .client-store p.client-store-address { display:flex; align-items:flex-start; gap:6px; margin:4px 0 0; line-height:20px; }

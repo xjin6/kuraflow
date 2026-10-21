@@ -1,0 +1,59 @@
+# Flow 部署与预览
+
+Flow 是仅供管理端使用的侧边助手，基础版本已部署到正式站点。“平台统一配置”改动已于 2026-10-19 发布。平台提供按厨房的功能配置，不提供聊天；门店不显示 Flow。正式环境的对话、图片与加密授权保存在 D1。
+
+入口：`http://localhost:8787/?page=overview&flow=1`。首次使用本地账号页的一键进入；登录后点击右上角通知旁的彩色 Flow 图标，桌面和手机均直接显示。图标使用共享矢量资源 `flow-mark.svg`。
+
+独立手机尺寸预览：`http://localhost:8787/__local-preview/phone?page=overview&flow=1`，以 420×912 CSS 视口显示真实页面，不改变桌面标签页尺寸。仅本地服务器允许页面由同源预览框加载，正式站点的框架限制保持原样。
+
+## 能做什么
+
+- 检索商品与规格、库存、采购成本、门店和报价、订单与配货备注、历史单据。
+- 搜索和详情按实际登录厨房隔离，订单历史按页完整读取并校验修订号，不使用最近 100 单代替全部历史。
+- 汇总已送达订单，保留未知单价；演示订单默认排除。
+- 商品类别与饼图使用一次完整目录汇总，避免逐页遍历后再计算。
+- 专门检查未报价单位、低库存和未设置库存。低库存结果标注阈值与基础单位。
+- 回答流式显示，提供可点击的站内来源，支持停止、重试及页面跳转。
+- 对话列表支持新建、切换、删除和撤销；对话与草稿按环境、厨房及个人账号隔离保存。刷新后可从列表继续，多个窗口有版本冲突时保留本页内容并提示。
+- 要求出图时调用 `flow_render_visual`，直接展示图表、流程图和简单矢量插画，支持查看大图。图片按个人账号鉴权；不允许脚本、外部资源或任意 HTML。当前不提供照片类栅格生图。
+
+本版只查询、分析和导航，不修改业务记录。模型没有终端、文件、浏览器、MCP 或任意 SQL 工具。
+
+## 模型连接
+
+本地使用公开的 GitHub Copilot SDK `@github/copilot-sdk`；正式 Worker 使用独立 Copilot HTTP 适配器，支持实时目录中的 Responses 与 Chat Completions 模型。系统指令为原创业务助手规则，没有采用未公开源码。
+
+平台端客户列表 → **功能配置**：按厨房设置 Flow 开关，粘贴 GitHub Token（常见前缀 `gho_`），读取模型目录并指定运行模型。连接成功不自动开启功能，需要保存功能设置。先验证 GitHub 身份和 Copilot 模型权限，成功才替换旧连接；失败保留原配置。Token 永不回显或写入浏览器存储。
+
+管理端负责人和管理员均不能配置 Token 或模型。停用时右上角 Flow 图标保持可见但置灰；服务端拒绝聊天、工具、对话读取和配置请求，已保存历史不删除。生成中的请求定时检查权限，停用后约 1 秒内中止。管理端每 15 秒、重新聚焦时刷新开通状态。
+
+本地和正式 Worker 共用权限、D1 加密连接和模型目录服务；本地推理仍由 SDK 执行，不继承其他应用或全局 GitHub 登录。本地会一次性迁移本项目原有私有连接到本地 D1，保留原文件和按厨房／个人保存的对话，不覆盖平台的显式设置，不向线上导入。
+
+模型目录按厨房和连接版本缓存 60 秒；手动刷新直接请求 GitHub。网络及 502/503 短暂重试一次，临时失败保留上次目录并标注缓存时间与错误；401/403 清除失效目录。更换 Token 不复用旧目录，不使用虚构列表，不自动替换不可用的指定模型。其他 API Key 及管理端设备授权入口已移除。
+
+生成回答时显示青蓝紫动态条及简短步骤摘要。摘要来自实际的数据加载、工具调用、结果数量和回复阶段，不转发模型的隐藏分析或完整推理。完成、停止或失败会结束动画，步骤记录随对话保存。
+
+## 代码入口
+
+- `flow-ui.js` / `flow-ui.css`：独立侧栏、流式 UI、来源和开通状态。
+- `backend/flow-control.js`：平台功能配置、固定模型和权限策略。
+- `scripts/flow-local-runtime.mjs`：本地与共享权限服务衔接、SDK 适配及旧连接保留。
+- `scripts/flow-copilot.mjs`：官方 SDK、自定义工具白名单与每轮独立会话。
+- `backend/flow-provider.js` / `flow-store.js`：实时模型目录、缓存、Token 加密存储。
+- `scripts/flow-archive.mjs`：私有对话保存、乐观版本控制、软删除及安全 SVG 图片。
+- `scripts/flow-data.mjs` / `backend/flow-tools.js`：租户绑定索引、完整历史与只读工具。
+- `backend/flow-prompt.js`：业务助手系统规则。
+
+`/api/flow/*` 在本地由开发服务处理，线上由 `backend/flow-service.js`、`flow-provider.js`、`flow-store.js` 与 `flow-content.js` 处理。POST 校验来源，会话失效后停止工具查询；平台与门店身份被拒绝。每轮最多 12 次工具调用，共享 HTTP 总预算 180 秒，本地 SDK 推理另有 90 秒上限。中止或断开请求会停止模型。
+
+参考：<https://github.com/github/copilot-sdk> · <https://github.com/github/copilot-sdk/blob/main/docs/auth/authenticate.md>
+
+## 当前验证
+
+Flow 数据、连接、对话持久化、图片、会话权限及前端交互均有针对性测试；未登录、门店、平台身份及跨站请求均被拦截。真实 Copilot 问答已调用工具并核实 146 个商品、5 家门店、本月无已送达订单，以及未设置库存的商品数量；来源可回到页面核对。模型的分析阶段不会传给聊天界面，最终回答会替换中间输出。
+
+历史图片与对话保留。当前独立连接已实际返回 18 个 GitHub Copilot 模型；已通过最小回复和调用绘图工具的完整请求验证，流程图请求返回了图片与最终回答。没有读取或复用其他应用凭据。
+
+运行 `npm run test:flow` 复查 Flow 测试。平台权限、模型目录缓存和本地衔接另有 `backend/flow-control.test.mjs`、`backend/flow-provider*.test.mjs`、`scripts/flow-local-runtime.test.mjs` 与 `frontend/platform-flow.test.mjs`。当前线上版本与发布验证见 `docs/cloud-deployment-status.md`。
+
+三端登录设计预览可在本机使用 `?login=kitchen&loginPreview=1`、`?login=platform&loginPreview=1`、`?login=store&loginPreview=1`；只展示真实表单，不退出当前会话。手机包装页也支持该参数，正式站点不具备此开发便利功能。

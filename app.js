@@ -1,4 +1,8 @@
 import {createAccountsUI} from './accounts-ui.js';
+import {createFlowUI} from './flow-ui.js';
+import {createNotificationsUI} from './notifications-ui.js';
+import {createLocalNotifications} from './local-notifications.js';
+import {isPackingShortage} from './notification-domain.js';
 import { KitchenModel, DEMO_DATE, money, STORAGE_KEY, isWeightUnit, categories as businessCategories, SALE_UNIT_OPTIONS } from './data.js';
 import { createBusinessUI } from './business-ui.js';
 import { createStoreUI } from './store-ui.js';
@@ -6,6 +10,7 @@ import { initSelectControls } from './ui-controls.js';
 import { createUIMotion } from './ui-motion.js';
 import { createSettlementUI } from './settlement-ui.js';
 import { createOverviewUI } from './overview-ui.js';
+import { createTasksUI } from './tasks-ui.js';
 import { notificationQueue } from './overview-data.js';
 import { company } from './business-data.js';
 import { isCloud, principal, createCloudModel, cloudRequest, imageDataBlob } from './cloud-client.js';
@@ -13,6 +18,7 @@ import { isCloud, principal, createCloudModel, cloudRequest, imageDataBlob } fro
 const model = isCloud ? createCloudModel(window.__KURAFLOW_SESSION__) : new KitchenModel();
 const app = document.querySelector('#app');
 const overlay = document.querySelector('#overlay-root');
+let notificationsUI,localNotifications;
 initSelectControls();
 const uiMotion = createUIMotion(app);
 const pageParams = new URLSearchParams(location.search);
@@ -54,9 +60,9 @@ if (clientPortal) {
   };
   restoreClientDraft();
 }
-const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (isCloud&&pageParams.get('page')==='team'?'team':'products') : (['overview','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || pageParams.get('tab') === 'costs' ? 'costs' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
+const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (isCloud&&pageParams.get('page')==='team'?'team':'products') : (['overview','tasks','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || pageParams.get('tab') === 'costs' ? 'costs' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
 Object.assign(ui, { settlementStore:pageParams.get('page') === 'documents' ? pageParams.get('store') || '' : '', settlementMonth:pageParams.get('month') || '', settlementView:pageParams.get('tab') === 'monthly' ? 'monthly' : 'orders', settlementDemo:pageParams.get('demo') === '1' });
-Object.assign(ui, { businessRange:['week','month','custom'].includes(pageParams.get('range')) ? pageParams.get('range') : 'month', businessStart:pageParams.get('from') || '', businessEnd:pageParams.get('to') || '', businessMetric:'amount', businessDemo:pageParams.get('page') === 'overview' && pageParams.has('demo') ? pageParams.get('demo') === '1' : !isCloud });
+Object.assign(ui, { businessRange:['week','month','custom'].includes(pageParams.get('range')) ? pageParams.get('range') : 'month', businessStart:pageParams.get('from') || '', businessEnd:pageParams.get('to') || '', businessMetric:'amount', taskTab:pageParams.get('tab')==='manual'?'manual':'system', taskFilters:{system:pageParams.get('tab')!=='manual'?pageParams.get('filter')||'all':'all',manual:pageParams.get('tab')==='manual'?pageParams.get('filter')||'all':'all'}, businessDemo:['overview','tasks'].includes(pageParams.get('page')) && pageParams.has('demo') ? pageParams.get('demo') === '1' : !isCloud });
 const labels = { pending: '待配货', packing: '配货中', ready: '待配送', delivering: '配送中', delivered: '已送达' };
 const stages = ['pending', 'packing', 'ready', 'delivering', 'delivered'];
 const categories = ['全部商品', ...businessCategories];
@@ -77,6 +83,7 @@ const icons = {
   down: '<path d="m6 9 6 6 6-6"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  list: '<circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/><path d="M9 6h12M9 12h12M9 18h12"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   alert: '<path d="m12 3 10 18H2zM12 9v4M12 17h.01"/>',
@@ -97,6 +104,32 @@ function icon(name, cls = '') { return `<span class="icon ${cls}"><svg width="20
 function button(text, action, type = 'secondary', extra = '', ico = '') { return `<button class="btn btn-${type}" data-action="${action}" ${extra}>${ico ? icon(ico) : ''}${text}</button>`; }
 function statusBadge(stage) { return `<span class="status-badge ${stage}"><i></i>${labels[stage]}</span>`; }
 function storeAvatar(store) { if (store.image) return `<img class="store-avatar store-photo" src="${escape(store.image)}" alt="${escape(store.name)}门店图">`; return `<div class="store-avatar ${['mint', 'lavender', 'peach', 'sky', 'rose'][model.state.stores.indexOf(store) % 5] || 'mint'}">${escape(store.name.includes('杨国福') ? '杨' : store.name.slice(0, 1))}</div>`; }
+function safeProfileImage(value,kind) {
+  if(typeof value!=='string'||!value.startsWith('/api/'))return '';
+  try{const url=new URL(value,location.origin);return url.origin===location.origin&&url.pathname===(kind==='organization'?'/api/organization-avatar':'/api/account-avatar')?value:'';}catch{return '';}
+}
+function personPortrait() {
+  const image=safeProfileImage(principal?.avatarUrl,'account');
+  return image?`<img src="${escape(image)}" alt="个人头像">`:escape(isCloud?(principal.displayName||'用户').slice(0,1):ui.role==='admin'?'管':'店');
+}
+function organizationPortrait() {
+  const image=safeProfileImage(principal?.organizationAvatarUrl,'organization');
+  return image?`<img src="${escape(image)}" alt="厨房头像">`:icon('store');
+}
+function syncAccountProfiles({account,organization}={}) {
+  if(!isCloud)return;
+  if(account?.id===principal.userId) {
+    for(const key of ['avatarUrl','avatarVersion'])if(Object.hasOwn(account,key))principal[key]=account[key];
+    if(account.name)principal.displayName=account.name;
+  }
+  if(organization?.tenantId===principal.tenantId) {
+    if(Object.hasOwn(organization,'avatarUrl'))principal.organizationAvatarUrl=organization.avatarUrl;
+    if(Object.hasOwn(organization,'avatarVersion'))principal.organizationAvatarVersion=organization.avatarVersion;
+  }
+  app.querySelectorAll('[data-person-avatar]').forEach(node=>{node.innerHTML=personPortrait();});
+  const org=app.querySelector('.workspace-avatar');if(org&&ui.role==='admin')org.innerHTML=organizationPortrait();
+  const name=app.querySelector('.sidebar-profile strong');if(name)name.textContent=principal.displayName;
+}
 function dateLabel(date) { return new Date(date + 'T12:00:00+09:00').toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' }); }
 function dailyOrders() { return model.state.orders.filter(o => o.deliveryDate === ui.date); }
 function linePacked(line) { return line.packedQty === line.qty && line.packingConfirmed !== false; }
@@ -142,21 +175,20 @@ function storeManagementPage() {
 function dateControl() { return `<label class="date-control"><input aria-label="配送日期" type="date" id="admin-date" required value="${ui.date}"></label>`; }
 function filteredOrders() { return dailyOrders().filter(o => (ui.status === 'all' || o.stage === ui.status) && (model.getStore(o.storeId).name + o.id).toLowerCase().includes(ui.query.toLowerCase())); }
 function shell() {
-  const adminNav = [['overview', 'grid', '经营概览'], ['orders', 'clipboard', '订单履约'], ['catalogue', 'tag', '商品管理'], ['stores', 'store', '门店管理'], ['documents', 'clipboard', '月结与统计']];
+  const adminNav = [['overview', 'grid', '经营概览'], ['tasks', 'list', '待办事项'], ['orders', 'clipboard', '订单履约'], ['catalogue', 'tag', '商品管理'], ['stores', 'store', '门店管理'], ['documents', 'clipboard', '月结与统计']];
   const clientNav = [['products', 'box', '我要订货'], ['my-orders', 'clipboard', '我的订单'], ['my-statements', 'wallet', '我的月结与统计'], ['account', 'store', '门店信息']];
-  if(isCloud){adminNav.push(['team','user','员工管理']);clientNav.push(['team','user','员工管理']);}
   const nav = ui.role === 'admin' ? adminNav : clientNav;
-  const currentNav = nav.find(n => n[0] === ui.page) || (ui.page === 'materials' ? ['materials', 'clipboard', '资料与业务规则'] : null);
+  const currentNav = nav.find(n => n[0] === ui.page) || (ui.page==='team'?['team','user','员工管理']:null) || (ui.page === 'materials' ? ['materials', 'clipboard', '资料与业务规则'] : null);
   const searchingRecycle = ui.role === 'admin' && ui.page === 'catalogue' && ui.catalogueTrash;
   const pending = model.state.orders.filter(o => ['pending', 'packing'].includes(o.stage)).length;
   const store = activeStore();
   return `<div class="app-shell ${ui.mobile ? 'mobile-open' : ''}">
     <aside class="sidebar"><a class="brand" href="#" data-action="home"><div class="brand-mark">${icon('box')}</div><div><div class="brand-name">倉流<span>KURAFLOW</span></div></div></a>
-      <div class="workspace-switch"><div class="workspace-avatar">${ui.role === 'admin' ? icon('store') : storeAvatar(store)}</div><div class="workspace-copy"><strong>${ui.role === 'admin' ? escape(company.name) : escape(store.name)}</strong></div></div>
+      <div class="workspace-switch">${ui.role==='admin'&&isCloud&&principal.accountRole==='owner'?`<button type="button" class="workspace-avatar workspace-avatar-button" data-action="organization-avatar" aria-label="修改厨房头像" title="修改厨房头像">${organizationPortrait()}</button>`:`<div class="workspace-avatar">${ui.role === 'admin' ? organizationPortrait() : storeAvatar(store)}</div>`}<div class="workspace-copy"><strong>${ui.role === 'admin' ? escape(company.name) : escape(store.name)}</strong></div></div>
       <div class="sidebar-label">${ui.role === 'admin' ? '运营管理' : '门店服务'}</div><nav class="nav-list">${nav.map(([page, ico, label]) => `<button class="nav-item ${ui.page === page ? 'active' : ''}" data-page="${page}"><span class="nav-icon">${icon(ico)}</span><span>${label}</span>${page === 'orders' && pending ? `<span class="nav-count">${pending}</span>` : ''}</button>`).join('')}</nav>
-      <div class="sidebar-footer">${!isCloud?'<a class="account-preview-link" href="http://localhost:8787/local-setup" target="_blank" rel="noopener">平台与账号预览 ↗</a>':''}<button class="support-link" data-action="help">${icon('help')} 使用指南 ${icon('arrow')}</button><div class="sidebar-profile"><div class="user-avatar">${ui.role === 'admin' ? '管' : '店'}</div><div><strong>${isCloud?escape(principal.displayName):ui.role === 'admin' ? '管理员' : escape(store.contact)}</strong><span>${ui.role === 'admin' ? '中央厨房管理员' : '门店采购负责人'}</span></div><span class="demo-indicator">${isCloud ? '在线' : '演示'}</span></div></div>
+      <div class="sidebar-footer"><button class="support-link" data-action="help">${icon('help')} 使用指南 ${icon('arrow')}</button>${isCloud?`<button type="button" class="sidebar-profile profile-entry" data-action="open-own-team" aria-label="员工管理与我的账号" title="员工管理与我的账号">`:'<div class="sidebar-profile">'}<div class="user-avatar" data-person-avatar>${personPortrait()}</div><div><strong>${isCloud?escape(principal.displayName):ui.role === 'admin' ? '管理员' : escape(store.contact)}</strong><span>${isCloud?(principal.accountRole==='owner'?'负责人 · 员工管理':'管理员 · 我的账号'):ui.role === 'admin' ? '管理员' : '门店采购负责人'}</span></div>${isCloud?icon('chevron'):'<span class="demo-indicator">演示</span>'}${isCloud?'</button>':'</div>'}</div>
     </aside><div class="mobile-backdrop" data-action="mobile-close"></div>
-    <main class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button menu-button" data-action="mobile-menu" aria-label="打开菜单">${icon('menu')}</button><strong>${currentNav?.[2] || ''}</strong>${ui.orderId && ui.page === 'orders' ? icon('chevron') + '<strong>货单详情</strong>' : ''}</div><div class="topbar-right"><label class="search-box">${icon('search')}<input id="global-search" placeholder="${searchingRecycle ? '搜索已删除商品…' : ui.role === 'admin' ? '搜索门店、订单…' : '搜索商品…'}" aria-label="搜索" value="${escape(searchingRecycle ? ui.recycleQuery : ui.query)}"><span class="search-shortcut">↵</span></label>${isCloud ? `<div class="cloud-session-actions"><span class="cloud-online-label" id="cloud-sync-status">已连接</span><button class="text-button" data-action="logout">退出</button></div>` : clientPortal ? '<button class="text-button" data-action="client-logout">退出登录</button>' : ''}${notificationButton()}<div class="topbar-user">${ui.role === 'admin' ? '管' : '店'}</div></div></header>
+    <main class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button menu-button" data-action="mobile-menu" aria-label="打开菜单">${icon('menu')}</button><strong>${currentNav?.[2] || ''}</strong>${ui.orderId && ui.page === 'orders' ? icon('chevron') + '<strong>货单详情</strong>' : ''}</div><div class="topbar-right"><label class="search-box">${icon('search')}<input id="global-search" placeholder="${searchingRecycle ? '搜索已删除商品…' : ui.role === 'admin' ? '搜索门店、订单…' : '搜索商品…'}" aria-label="搜索" value="${escape(searchingRecycle ? ui.recycleQuery : ui.query)}"><span class="search-shortcut">↵</span></label>${isCloud ? `<div class="cloud-session-actions"><span class="cloud-online-label" id="cloud-sync-status">已连接</span><button class="text-button" data-action="logout">退出</button></div>` : clientPortal ? '<button class="text-button" data-action="client-logout">退出登录</button>' : ''}${flowUI.launcher({compact:true})}${notificationButton()}${isCloud?`<button type="button" class="topbar-user personal-profile-button" data-action="open-own-team" aria-label="我的账号与员工管理" data-person-avatar>${personPortrait()}</button>`:`<div class="topbar-user">${ui.role === 'admin' ? '管' : '店'}</div>`}</div></header>
     <div class="page-content">${pageContent()}<footer class="page-footer"><span>倉流 KURAFLOW</span><span>${isCloud ? '云端工作台 · 东京时间 · 日元报价' : '本机交互演示 · 东京时间 · 日元报价 · 税口径按来源'}</span></footer></div></main></div>`;
 }
 function pageContent() {
@@ -166,12 +198,12 @@ function pageContent() {
     }));
     return emptyState(model.reportHistoryError?'历史订单读取失败':'正在读取历史订单',model.reportHistoryError||'','clipboard')+(model.reportHistoryError?button('重新加载','reload-report-history','secondary'):'');
   }
-  const pages = { team: () => accountsUI.page(), overview: overviewPage, orders: () => ui.orderId ? orderDetailPage() : ordersPage(), delivery: ordersPage, catalogue: productManagementPage, stores: storeManagementPage, products: businessUI.clientProductsPage, costs: businessUI.costsPage, documents: () => settlementUI.page(), materials: businessUI.materialsPage, 'my-statements': () => settlementUI.page(), 'my-orders': clientOrdersPage, account: accountPage };
+  const pages = { team: () => accountsUI.page(), overview: overviewPage, tasks: () => tasksUI.page(), orders: () => ui.orderId ? orderDetailPage() : ordersPage(), delivery: ordersPage, catalogue: productManagementPage, stores: storeManagementPage, products: businessUI.clientProductsPage, costs: businessUI.costsPage, documents: () => settlementUI.page(), materials: businessUI.materialsPage, 'my-statements': () => settlementUI.page(), 'my-orders': clientOrdersPage, account: accountPage };
   return (pages[ui.page] || overviewPage)();
 }
 function renderClientLogin(message = '', value = '') {
   document.title = '门店登录 | 倉流 KURAFLOW';
-  app.innerHTML = `<main class="store-login-shell"><section class="section-card store-login-card"><a class="store-login-brand" aria-label="倉流 KURAFLOW">${icon('box')}<strong>倉流 <span>KURAFLOW</span></strong></a><div class="eyebrow">RESTAURANT WORKSPACE</div><h1>登录你的门店</h1><form id="store-login-form"><div class="field"><label for="store-login-code">门店识别码</label><input class="input" id="store-login-code" name="accessCode" type="text" value="${escape(value)}" placeholder="XXXX-XXXX-XXXX-XXXX" required maxlength="24" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="store-login-hint store-login-error"></div><p class="form-hint" id="store-login-hint">16 位大写字母与数字，可直接粘贴识别码。</p><p class="store-login-error" id="store-login-error" role="alert">${escape(message)}</p><button class="btn btn-primary store-login-submit" type="submit">进入门店工作台 ${icon('arrow')}</button></form><p class="store-login-help">还没有识别码？请联系中央厨房管理员。</p><span class="store-preview-label">本地交互预览</span></section></main>`;
+  app.innerHTML = `<main class="store-login-shell"><section class="section-card store-login-card"><a class="store-login-brand" aria-label="倉流 KURAFLOW">${icon('box')}<strong>倉流 <span>KURAFLOW</span></strong></a><div class="eyebrow">RESTAURANT WORKSPACE</div><h1>登录你的门店</h1><form id="store-login-form"><div class="field"><label for="store-login-code">门店识别码</label><input class="input" id="store-login-code" name="accessCode" type="text" value="${escape(value)}" placeholder="XXXX-XXXX-XXXX-XXXX" required maxlength="24" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="store-login-hint store-login-error"></div><p class="form-hint" id="store-login-hint">16 位大写字母与数字，可直接粘贴识别码。</p><p class="store-login-error" id="store-login-error" role="alert">${escape(message)}</p><button class="btn btn-primary store-login-submit" type="submit">进入门店工作台 ${icon('arrow')}</button></form><p class="store-login-help">还没有识别码？请联系管理员。</p><span class="store-preview-label">本地交互预览</span></section></main>`;
 }
 function render() {
   const motionBefore = uiMotion.capture();
@@ -186,6 +218,7 @@ function render() {
   if (ui.category !== '全部商品' && !catalogue.some(p => p.category === ui.category)) ui.category = '全部商品';
   document.title = (ui.role === 'admin' ? '每度商事 · 管理工作台' : activeStore().name + ' · 门店订货') + ' | 倉流'; app.innerHTML = shell();
   uiMotion.afterRender([ui.role, ui.page, ui.page === 'catalogue' ? ui.productTab + ':' + ui.catalogueTrash : ui.page === 'stores' ? ui.storeTab : ui.orderId || ''].join(':'), ui.page === 'orders' ? ui.status : '', motionBefore);
+  flowUI.sync();
   scheduleOrderContext();
 }
 let orderContextFrame = 0;
@@ -203,7 +236,7 @@ function scheduleOrderContext() {
 window.addEventListener('scroll', scheduleOrderContext, { passive: true });
 window.addEventListener('resize', scheduleOrderContext);
 function hasLocalDraftEditor() {
-  return Boolean(overlay.firstChild || document.querySelector('.inventory-editor, .quote-entry, [data-pack-input][data-dirty], [data-pack-input][data-saving], [data-pack-input][aria-invalid="true"]') || [...document.querySelectorAll('.inline-editor-feedback')].some(el => el.textContent === '未保存'));
+  return Boolean(overlay.firstChild || document.querySelector('.inventory-editor, .quote-entry, [data-packing-saving]') || [...document.querySelectorAll('.inline-editor-feedback')].some(el => el.textContent === '未保存'));
 }
 function refreshLocalWhenReady() {
   if (!isCloud && ui.localRefreshPending && !hasLocalDraftEditor()) render();
@@ -241,7 +274,7 @@ function ordersPage() {
       const action = ['pending','packing'].includes(o.stage) ? button(o.stage === 'pending' ? '开始配货' : '继续配货', 'order-detail', 'primary', `data-id="${o.id}"`, 'box')
         : o.stage === 'ready' ? button('开始配送', 'stage', 'primary', `data-id="${o.id}" data-stage="delivering"`, 'truck')
         : o.stage === 'delivering' ? button('确认送达', 'confirm-delivery', 'primary', `data-id="${o.id}"`, 'check') : '';
-      return `<article class="section-card fulfillment-card" data-fulfillment-order="${o.id}"><div class="fulfillment-card-heading"><div class="store-cell">${storeAvatar(store)}<div class="fulfillment-identity"><div class="fulfillment-title-row"><h2>${escape(store.name)}</h2><div class="fulfillment-address">${icon('pin')}<span>${escape(store.address || '地址待填写')}</span></div></div><div class="cell-secondary">${escape(o.id)}${o.isDemo ? ' · 演示' : ''}${store.deletedAt ? ' · 门店已删除' : ''}</div></div></div>${statusBadge(o.stage)}</div><div class="fulfillment-card-body"><dl class="fulfillment-facts"><div><dt>配送日期</dt><dd>${o.deliveryDate}</dd></div><div><dt>商品</dt><dd>${o.items.length} 种</dd></div><div><dt>已配齐</dt><dd>${packedCount(o)} / ${o.items.length}</dd></div><div><dt>报价金额</dt><dd>${money(model.orderTotal(o))}${model.orderUnquotedCount(o) ? `<small>${model.orderUnquotedCount(o)} 项待报价</small>` : ''}</dd></div></dl>${o.issue ? `<div class="notice notice-warning">${icon('alert')}${escape(o.issue)}</div>` : ''}</div><div class="fulfillment-card-footer">${fulfillmentSteps(o)}<div class="fulfillment-actions">${['pending','packing'].includes(o.stage) ? '' : button('订单明细','order-detail','secondary',`data-id="${o.id}"`)}${action}</div></div></article>`;
+      return `<article class="section-card fulfillment-card" data-fulfillment-order="${o.id}"><div class="fulfillment-card-heading"><div class="store-cell">${storeAvatar(store)}<div class="fulfillment-identity"><div class="fulfillment-title-row"><h2>${escape(store.name)}</h2><div class="fulfillment-address">${icon('pin')}<span>${escape(store.address || '地址待填写')}</span></div></div><div class="cell-secondary">${escape(o.id)}${o.isDemo ? ' · 演示' : ''}${store.deletedAt ? ' · 门店已删除' : ''}</div></div></div>${statusBadge(o.stage)}</div><div class="fulfillment-card-body"><dl class="fulfillment-facts"><div><dt>配送日期</dt><dd>${o.deliveryDate}</dd></div><div><dt>商品</dt><dd>${o.items.length} 种</dd></div><div><dt>已配齐</dt><dd>${packedCount(o)} / ${o.items.length}</dd></div><div><dt>报价金额</dt><dd>${money(model.orderTotal(o))}${model.orderUnquotedCount(o) ? `<small>${model.orderUnquotedCount(o)} 项待报价</small>` : ''}</dd></div></dl>${orderIssueHTML(o)}</div><div class="fulfillment-card-footer">${fulfillmentSteps(o)}<div class="fulfillment-actions">${['pending','packing'].includes(o.stage) ? '' : button('订单明细','order-detail','secondary',`data-id="${o.id}"`)}${action}</div></div></article>`;
     }).join('') || emptyState('暂无订单', '调整日期或状态查看。', 'clipboard')}</div>`;
 }
 function storesPage() { return storeUI.storesPage(); }
@@ -257,11 +290,11 @@ function cartPanel() {
 function clientOrdersPage() {
   const orders = model.state.orders.filter(o => o.storeId === activeStore().id).slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   return titleHeading('我的订单', '查看订单明细、配货进度与配送状态。', clientStoreSelect() + button('继续订货', 'client-products', 'primary', '', 'plus'), 'YOUR ORDERS') +
-    `<div class="order-cards">${orders.map(o => `<article class="order-card section-card"><div class="order-card-header"><div><strong>${o.id}</strong><span>配送日期：${o.deliveryDate}</span></div>${statusBadge(o.stage)}</div><div class="client-order-progress">${stages.map((s, i) => `<div class="delivery-step ${stages.indexOf(o.stage) >= i ? 'done' : ''}"><i>${stages.indexOf(o.stage) > i ? '✓' : i + 1}</i><span>${labels[s]}</span></div>`).join('')}</div><div class="order-line-summary">${o.items.map(i => `<div><span>${escape(model.getProduct(i.productId).icon)} ${escape(model.getProduct(i.productId).name)} <small>× ${i.qty} ${i.unit || model.getProduct(i.productId).unit}</small></span><strong>${money(lineAmount(i))}</strong></div>`).join('')}</div>${o.issue ? `<div class="notice notice-warning">${icon('alert')} 厨房提醒：${escape(o.issue)}</div>` : ''}<div class="order-card-footer"><span>${o.note ? '备注：' + escape(o.note) : '下单价格已锁定 · 税口径按来源'}</span><div>已知报价金额${model.orderUnquotedCount(o) ? '（另有 ' + model.orderUnquotedCount(o) + ' 项待报价）' : ''} <strong>${money(model.orderTotal(o))}</strong></div></div></article>`).join('') || emptyState('还没有订货记录', '前往「我要订货」，创建你的第一笔订单。', 'clipboard')}</div>`;
+    `<div class="order-cards">${orders.map(o => `<article class="order-card section-card"><div class="order-card-header"><div><strong>${o.id}</strong><span>配送日期：${o.deliveryDate}</span></div>${statusBadge(o.stage)}</div><div class="client-order-progress">${stages.map((s, i) => `<div class="delivery-step ${stages.indexOf(o.stage) >= i ? 'done' : ''}"><i>${stages.indexOf(o.stage) > i ? '✓' : i + 1}</i><span>${labels[s]}</span></div>`).join('')}</div><div class="order-line-summary">${o.items.map(i => `<div><span>${escape(model.getProduct(i.productId).icon)} ${escape(model.getProduct(i.productId).name)} <small>× ${i.qty} ${i.unit || model.getProduct(i.productId).unit}</small></span><strong>${money(lineAmount(i))}</strong></div>`).join('')}</div>${o.issue ? `<div class="notice ${o.issueResolvedAt?'':'notice-warning'}">${icon(o.issueResolvedAt?'check':'alert')} 厨房提醒：${escape(o.issue)}${o.issueResolvedAt?' · 已处理':''}</div>` : ''}<div class="order-card-footer"><span>${o.note ? '备注：' + escape(o.note) : '下单价格已锁定 · 税口径按来源'}</span><div>已知报价金额${model.orderUnquotedCount(o) ? '（另有 ' + model.orderUnquotedCount(o) + ' 项待报价）' : ''} <strong>${money(model.orderTotal(o))}</strong></div></div></article>`).join('') || emptyState('还没有订货记录', '前往「我要订货」，创建你的第一笔订单。', 'clipboard')}</div>`;
 }
 function accountPage() {
   const s = activeStore();
-  return titleHeading('门店信息', '', clientStoreSelect(), 'STORE PROFILE') + `<section class="section-card profile-card"><div class="profile-card-top">${storeAvatar(s)}<div><h2>${escape(s.name)}</h2><p>${escape(s.city)} · 合作门店</p></div></div><div class="profile-fields">${[s.accessCode ? ['门店识别码', s.accessCode] : ['门店', s.name], ['联系人', s.contact], ['联系电话', s.phone], ['配送地址', s.address], ['供货方', company.name]].map(([label, value]) => `<div><span>${label}</span><strong>${escape(value || '待录入')}</strong></div>`).join('')}</div></section><div class="notice">${icon('help')} 地址或联系人需要调整时，请联系中央厨房管理员。${isCloud ? '' : '当前为本机演示账号。'}</div>`;
+  return titleHeading('门店信息', '', clientStoreSelect(), 'STORE PROFILE') + `<section class="section-card profile-card"><div class="profile-card-top">${storeAvatar(s)}<div><h2>${escape(s.name)}</h2><p>${escape(s.city)} · 合作门店</p></div></div><div class="profile-fields">${[s.accessCode ? ['门店识别码', s.accessCode] : ['门店', s.name], ['联系人', s.contact], ['联系电话', s.phone], ['配送地址', s.address], ['供货方', company.name]].map(([label, value]) => `<div><span>${label}</span><strong>${escape(value || '待录入')}</strong></div>`).join('')}</div></section><div class="notice">${icon('help')} 地址或联系人需要调整时，请联系管理员。${isCloud ? '' : '当前为本机演示账号。'}</div>`;
 }
 async function readProductImage(file) {
   if (!file) return null;
@@ -288,12 +321,14 @@ function emptyState(title, copy, ico) { return `<div class="empty-state">${icon(
 let previousFocus;
 function openOverlay(content) {
   previousFocus = previousFocus || document.activeElement;
+  accountsUI?.onOverlayClose?.();
   overlay.innerHTML = content;
   document.body.style.overflow = 'hidden';
   if (overlay.querySelector('.document-detail')) overlay.querySelector('.modal').classList.add('modal-wide');
   requestAnimationFrame(() => overlay.querySelector('input:not([type="hidden"]):not([hidden]), textarea, button:not([hidden])')?.focus({ preventScroll: true }));
 }
 function closeOverlay() {
+  accountsUI?.onOverlayClose?.();
   overlay.innerHTML = '';
   storeUI?.dispose?.();
   document.body.style.overflow = '';
@@ -325,20 +360,31 @@ function orderDetailActions(order) {
   const nextText = { packing: '开始配货', ready: '确认配货完成', delivering: '开始配送', delivered: '确认送达' };
   return `<div class="order-action-progress"><strong data-packed-count>${packedCount(order)} / ${order.items.length} 种已配齐</strong><span data-order-action-hint>${orderActionHint(order)}</span></div><div class="order-action-buttons">${editable ? button('记录缺货', 'record-issue', 'secondary', `data-id="${order.id}"`, 'alert') : ''}${next ? button(nextText[next], next === 'delivered' ? 'confirm-delivery' : 'stage', 'primary', `data-id="${order.id}" data-stage="${next}" ${next === 'ready' && order.items.some(line => !linePacked(line)) ? 'disabled' : ''}`, next === 'delivering' ? 'truck' : 'check') : `<span class="delivered-note">${icon('check')} 已完成配送</span>`}</div>`;
 }
+function packingNoteHTML(order,line,editable) {
+  const open=isPackingShortage(line),resolved=line.packingIssue?.type==='shortage'&&line.packingIssue?.status==='resolved';
+  return `<span>${escape(line.packingNote||'')}</span>${open||resolved?`<span class="packing-issue-state ${resolved?'is-resolved':''}">${open?'缺货待处理':'缺货已处理'}</span>`:''}${open&&editable?`<button type="button" class="text-button" data-action="resolve-packing-issue" data-id="${escape(order.id)}" data-product="${escape(line.productId)}">标记已解决</button>`:''}`;
+}
+function orderIssueHTML(order) {
+  if(!order.issue)return '';
+  const resolved=Boolean(order.issueResolvedAt||order.stage==='delivered');
+  return `<div class="notice ${resolved?'':'notice-warning'} order-issue-notice ${resolved?'is-resolved':''}">${icon(resolved?'check':'alert')}<span>${escape(order.issue)}${resolved?' · 已处理':''}</span>${resolved?'':`<button class="text-button" data-action="resolve-order-issue" data-id="${escape(order.id)}">标记已解决</button>`}</div>`;
+}
+function packingLine(order, line, editable) {
+  const product = model.getProduct(line.productId), unit = line.unit || product.unit, complete = linePacked(line);
+  const name = line.productName || product.name, note = line.packingNote || '';
+  return `<div class="detail-item order-line ${complete ? 'complete' : ''}" role="listitem" data-packing-product="${escape(line.productId)}"><div class="order-line-product">${product.image ? `<img class="order-line-image" src="${escape(product.image)}" alt="" loading="lazy">` : `<span class="order-line-placeholder">${icon('box')}</span>`}<div><strong>${escape(name)}</strong><span>${escape(line.spec || product.spec)} · ${line.price == null ? '单价待确认' : money(line.price) + ' / ' + escape(unit)}</span></div></div><div class="packing-required"><span>需配</span><strong>${line.qty} <small>${escape(unit)}</small></strong></div><button class="packing-note-button icon-button ${note ? 'has-note' : ''}" data-action="packing-note" data-id="${escape(order.id)}" data-product="${escape(line.productId)}" aria-label="${note ? '编辑' : '添加'}${escape(name)}的异常备注" title="异常备注" ${editable ? '' : 'hidden'}>${icon('edit')}<span>备注</span></button><button class="packing-toggle" role="checkbox" aria-checked="${complete}" aria-label="${complete ? '取消配齐' : '确认配齐'}${escape(name)}" data-action="pack-line" data-id="${escape(order.id)}" data-product="${escape(line.productId)}" ${editable ? '' : 'disabled'}><span class="packing-checkbox">${icon('check')}</span></button><div class="packing-item-note packing-note-content" ${note ? '' : 'hidden'}>${packingNoteHTML(order,line,editable)}</div></div>`;
+}
 function orderDetailPage() {
   const order = model.state.orders.find(order => order.id === ui.orderId);
   if (!order) return titleHeading('货单详情', '') + `<section class="section-card">${emptyState('未找到这张货单', '', 'clipboard')}${button('返回订单', 'order-list')}</section>`;
   const store = model.getStore(order.storeId), editable = ['pending', 'packing'].includes(order.stage);
   return `<div class="order-detail-page" data-order="${escape(order.id)}" data-stage="${order.stage}"><div class="order-detail-heading"><button class="icon-button order-back" data-action="order-list" aria-label="返回订单">${icon('arrow')}</button><div class="order-detail-title"><h1>货单详情</h1><span>${escape(order.id)}${order.isDemo ? ' · 演示' : ''}</span></div><div class="order-detail-heading-actions">${button('结算明细','settlement-detail','secondary',`data-id="${escape(order.id)}"`)}${button('PDF','order-pdf','secondary',`data-id="${escape(order.id)}"`,'download')}</div></div>
-  <section class="section-card order-detail-summary"><div class="order-detail-store"><div class="store-cell">${storeAvatar(store)}<div><h2>${escape(store.name)}</h2>${store.deletedAt ? '<span class="cell-secondary">门店已删除</span>' : ''}</div></div><div class="order-summary-address">${icon('pin')}<span>${escape(store.address || '地址待填写')}</span></div><div data-order-status>${statusBadge(order.stage)}</div></div><dl class="order-detail-facts"><div><dt>配送日期</dt><dd>${order.deliveryDate}</dd></div><div><dt>联系人</dt><dd>${escape(store.contact || '待填写')}</dd></div><div><dt>联系电话</dt><dd>${escape(store.phone || '待填写')}</dd></div><div><dt>报价金额</dt><dd>${money(model.orderTotal(order))}${model.orderUnquotedCount(order) ? `<small>${model.orderUnquotedCount(order)} 项待报价</small>` : ''}</dd></div></dl><div class="order-detail-flow">${fulfillmentSteps(order)}</div>${order.note && !order.isDemo ? `<div class="order-note">${icon('clipboard')} ${escape(order.note)}</div>` : ''}${order.issue ? `<div class="notice notice-warning">${icon('alert')} ${escape(order.issue)}</div>` : ''}${order.deliveredAt ? `<div class="notice order-delivery-receipt">${icon('check')}<span>${new Date(order.deliveredAt).toLocaleString('zh-CN', { timeZone: 'Asia/Tokyo' })} 已送达${order.receivedBy ? ' · 签收人：' + escape(order.receivedBy) : ''}</span></div>` : ''}</section>
+  <section class="section-card order-detail-summary"><div class="order-detail-store"><div class="store-cell">${storeAvatar(store)}<div><h2>${escape(store.name)}</h2>${store.deletedAt ? '<span class="cell-secondary">门店已删除</span>' : ''}</div></div><div class="order-summary-address">${icon('pin')}<span>${escape(store.address || '地址待填写')}</span></div><div data-order-status>${statusBadge(order.stage)}</div></div><dl class="order-detail-facts"><div><dt>配送日期</dt><dd>${order.deliveryDate}</dd></div><div><dt>联系人</dt><dd>${escape(store.contact || '待填写')}</dd></div><div><dt>联系电话</dt><dd>${escape(store.phone || '待填写')}</dd></div><div><dt>报价金额</dt><dd>${money(model.orderTotal(order))}${model.orderUnquotedCount(order) ? `<small>${model.orderUnquotedCount(order)} 项待报价</small>` : ''}</dd></div></dl><div class="order-detail-flow">${fulfillmentSteps(order)}</div>${order.note && !order.isDemo ? `<div class="order-note">${icon('clipboard')} ${escape(order.note)}</div>` : ''}<div data-order-issue>${orderIssueHTML(order)}</div>${order.deliveredAt ? `<div class="notice order-delivery-receipt">${icon('check')}<span>${new Date(order.deliveredAt).toLocaleString('zh-CN', { timeZone: 'Asia/Tokyo' })} 已送达${order.receivedBy ? ' · 签收人：' + escape(order.receivedBy) : ''}</span></div>` : ''}</section>
   <aside class="order-context-bar" aria-hidden="true" hidden><div class="order-context-identity">${storeAvatar(store)}<div><strong>${escape(store.name)}</strong><span>${escape(order.id)} · ${order.deliveryDate}</span></div></div><div class="order-context-address">${icon('pin')}<span>${escape(store.address || '地址待填写')}</span></div><div class="order-context-progress"><span data-order-status>${statusBadge(order.stage)}</span><strong data-packed-count>${packedCount(order)} / ${order.items.length} 种已配齐</strong></div></aside>
-  <section class="section-card order-packing-panel"><div class="order-packing-heading"><h2>配货明细</h2><span data-packed-count>${packedCount(order)} / ${order.items.length} 种已配齐</span></div><div class="progress-track"><div class="progress-fill" style="width:${packedPercent(order)}%"></div></div><div class="order-lines-heading" aria-hidden="true"><span>商品 / 规格</span><span>订货数量</span><span>实配数量</span><span>状态</span></div><div class="detail-items order-detail-items">${order.items.map(line => {
-    const product = model.getProduct(line.productId), unit = line.unit || product.unit, complete = linePacked(line);
-    return `<div class="detail-item order-line ${complete ? 'complete' : ''}"><div class="order-line-product">${product.image ? `<img class="order-line-image" src="${escape(product.image)}" alt="" loading="lazy">` : `<span class="order-line-placeholder">${icon('box')}</span>`}<div><strong>${escape(product.name)}</strong><span>${escape(product.spec)} · ${line.price === null || line.price === undefined ? '单价待确认' : money(line.price) + ' / ' + escape(unit)}</span></div></div><strong class="line-qty"><span class="order-qty-label">订货 </span>${line.qty} ${escape(unit)}</strong><div class="order-line-quantity"><label><input class="input" type="number" min="0" max="${line.qty}" step="${isWeightUnit(unit) ? '0.001' : '1'}" value="${line.packedQty}" data-pack-input="${product.id}" data-order="${order.id}" aria-label="${escape(product.name)}实配数量" ${editable ? '' : 'disabled'}><span>${escape(unit)}</span></label><div class="pack-row-feedback" role="status">${!complete && line.packedQty < line.qty ? `还差 ${Number((line.qty - line.packedQty).toFixed(3))} ${escape(unit)}` : ''}</div></div><button class="pack-check ${complete ? 'checked' : ''}" data-action="pack-line" data-id="${order.id}" data-product="${product.id}" aria-label="${complete ? '已配齐' : '确认配齐'}${escape(product.name)}" aria-pressed="${complete}" ${editable && !complete && line.packedQty === line.qty ? '' : 'disabled'}>${icon('check')}${complete ? '已配齐' : '确认配齐'}</button></div>`;
-  }).join('')}</div></section><div class="order-detail-actions">${orderDetailActions(order)}</div></div>`;
+  <section class="section-card order-packing-panel"><div class="order-packing-heading"><h2>配货清单</h2><span data-packed-count aria-live="polite">${packedCount(order)} / ${order.items.length} 种已配齐</span></div><div class="progress-track"><div class="progress-fill" style="width:${packedPercent(order)}%"></div></div><div class="detail-items order-detail-items" role="list" aria-label="配货清单">${order.items.map(line => packingLine(order, line, editable)).join('')}</div></section><div class="order-detail-actions">${orderDetailActions(order)}</div></div>`;
 }
 function openOrderDetail(id) {
-  if (ui.role !== 'admin') throw new Error('配货管理仅供中央厨房管理员操作。');
+  if (ui.role !== 'admin') throw new Error('配货管理仅供管理员操作。');
   const order = model.state.orders.find(order => order.id === id);
   if (!order) throw new Error('未找到订单。');
   const returnView = { page: ui.page, date: ui.date, status: ui.status, query: ui.query, scrollY: window.scrollY };
@@ -351,8 +397,7 @@ function openOrderDetail(id) {
   document.querySelector('.order-detail-title h1')?.focus({ preventScroll: true });
 }
 async function saveOrderInputs(id) {
-  const inputs = app.querySelectorAll(`[data-pack-input][data-order="${CSS.escape(id)}"]:not(:disabled)`);
-  for (const input of inputs) if (input.dataset.dirty || input.dataset.saving || input.hasAttribute('aria-invalid')) await savePackingInput(input);
+  await Promise.all([...packingSaves.values()].filter(save => save.orderId === id).map(save => save.operation));
 }
 async function returnOrderList() {
   if (ui.orderId) await saveOrderInputs(ui.orderId);
@@ -362,13 +407,14 @@ async function returnOrderList() {
 }
 function notificationState() { return notificationQueue(model, ui.role, activeStore()?.id || '', {includeDemo:ui.businessDemo}); }
 function notificationButton() {
-  const {count}=notificationState();
-  return `<button class="icon-button notification-button ${count?'has-notifications':''}" aria-label="查看待处理提醒，${count?count+'项':'暂无待处理'}" data-action="notifications">${icon('bell')}${count?`<span class="notification-badge" aria-hidden="true">${count>99?'99+':count}</span>`:''}</button>`;
+  const count=ui.role==='admin'?(notificationsUI?.getUnreadCount()||0):notificationState().count;
+  const label=ui.role==='admin'?`通知中心，${count?count+'条未读':'暂无未读'}`:`查看订单提醒，${count?count+'项':'暂无待处理'}`;
+  return `<button class="icon-button notification-button ${count?'has-notifications':''}" aria-label="${label}" data-action="notifications">${icon('bell')}${count?`<span class="notification-badge" aria-hidden="true">${count>99?'99+':count}</span>`:''}</button>`;
 }
 function syncNotificationBadge() {
   const el=app.querySelector('.notification-button');if(!el)return;
-  const {count}=notificationState();
-  el.setAttribute('aria-label',`查看待处理提醒，${count?count+'项':'暂无待处理'}`);
+  const count=ui.role==='admin'?(notificationsUI?.getUnreadCount()||0):notificationState().count;
+  el.setAttribute('aria-label',ui.role==='admin'?`通知中心，${count?count+'条未读':'暂无未读'}`:`查看订单提醒，${count?count+'项':'暂无待处理'}`);
   el.classList.toggle('has-notifications',count>0);
   let badge=el.querySelector('.notification-badge');
   if(!count){badge?.remove();return;}
@@ -376,8 +422,9 @@ function syncNotificationBadge() {
   badge.textContent=count>99?'99+':String(count);
 }
 function notificationsModal() {
+  if(ui.role==='admin')return notificationsUI.open();
   const {orders,low,count}=notificationState(),admin=ui.role==='admin';
-  const rows=orders.map(order=>`<div class="notification-row"><div class="alert-symbol ${order.issue?'red':'mint'}">${icon(order.issue?'alert':order.stage==='delivering'?'truck':'box')}</div><div><strong>${escape(admin?model.getStore(order.storeId)?.name || order.storeId:order.id)}</strong><p>${admin?escape(order.id)+' · ':''}${labels[order.stage]}${order.isDemo?' · 演示':''} · ${escape(order.deliveryDate)}${order.issue?' · '+escape(order.issue):''}</p></div>${admin?button('查看','order-detail','secondary',`data-id="${escape(order.id)}"`,'arrow'):''}</div>`).join('')
+  const rows=orders.map(order=>`<div class="notification-row"><div class="alert-symbol ${order.issue&&!order.issueResolvedAt?'red':'mint'}">${icon(order.issue&&!order.issueResolvedAt?'alert':order.stage==='delivering'?'truck':'box')}</div><div><strong>${escape(admin?model.getStore(order.storeId)?.name || order.storeId:order.id)}</strong><p>${admin?escape(order.id)+' · ':''}${labels[order.stage]}${order.isDemo?' · 演示':''} · ${escape(order.deliveryDate)}${order.issue?' · '+escape(order.issue)+(order.issueResolvedAt?'（已处理）':''):''}</p></div>${admin?button('查看','order-detail','secondary',`data-id="${escape(order.id)}"`,'arrow'):''}</div>`).join('')
     + low.map(product=>`<div class="notification-row"><div class="alert-symbol red">${icon('alert')}</div><div><strong>${escape(product.name)}库存偏低</strong><p>剩余 ${model.getStock(product.id)} ${escape(product.unit)}</p></div>${button('更新库存','stock','secondary',`data-id="${escape(product.id)}"`)}</div>`).join('');
   modal(admin?'待处理提醒':'我的订单提醒',`<p class="notification-count-heading">${count} 项待处理</p><div class="notification-list">${rows || emptyState('暂无待处理事项','','check')}</div>`,button('关闭','close','secondary')+(admin?'':'<button class="btn btn-primary" data-page="my-orders">查看我的订单</button>'));
 }
@@ -413,15 +460,16 @@ function nav(page, tab = '') {
   if (page === 'delivery') page = 'orders';
   if (page === 'costs') { page = 'catalogue'; tab = 'costs'; }
   if (isCloud) ui.role = principal.role === 'store' ? 'client' : 'admin';
-  const allowed = ui.role === 'admin' ? ['overview', 'orders', 'delivery', 'catalogue', 'stores', 'costs', 'documents', 'materials', 'team'] : ['products', 'my-orders', 'my-statements', 'account', 'team'];
+  const allowed = ui.role === 'admin' ? ['overview', 'tasks', 'orders', 'delivery', 'catalogue', 'stores', 'costs', 'documents', 'materials', 'team'] : ['products', 'my-orders', 'my-statements', 'account', 'team'];
   if (!allowed.includes(page)) throw new Error('当前账号无法访问此页面。');
   clearTimeout(searchTimer);
   if (page === 'catalogue') ui.productTab = tab === 'costs' ? 'costs' : 'inventory';
+  if (page === 'tasks' && tab) ui.taskTab=tab==='manual'?'manual':'system';
   if (page === 'stores') ui.storeTab = tab === 'quotes' ? 'quotes' : 'stores';
   if (page === 'documents' && tab !== 'store-settlement') { ui.settlementStore=''; ui.settlementDemo=false; }
-  const section = page === 'catalogue' ? ui.productTab : page === 'stores' ? ui.storeTab : '';
+  const section = page === 'catalogue' ? ui.productTab : page === 'stores' ? ui.storeTab : page === 'tasks' ? ui.taskTab : '';
   history.replaceState(null, '', ui.role === 'client' ? '?view=client&page=' + page : '?page=' + page + (section ? '&tab=' + section : '') + (page === 'stores' && ui.storeTab === 'quotes' && ui.quoteStore ? '&store=' + encodeURIComponent(ui.quoteStore) : ''));
-  closeOverlay(); ui.orderId = null; ui.page = page; ui.query = ''; ui.catalogueTrash = false; ui.recycleQuery = ''; ui.status = 'all'; ui.mobile = false; ui.category = '全部商品'; if(page === 'overview') overviewUI.saveURL(); render(); window.scrollTo({ top: 0 });
+  closeOverlay(); ui.orderId = null; ui.page = page; ui.query = ''; ui.catalogueTrash = false; ui.recycleQuery = ''; ui.status = 'all'; ui.mobile = false; ui.category = '全部商品'; if(page === 'overview') overviewUI.saveURL(); if(page === 'tasks') tasksUI.saveURL(); render(); window.scrollTo({ top: 0 });
 }
 function switchStore(id) {
   if (!model.getStore(id) || (ui.role === 'client' && id !== (isCloud ? principal.storeId : previewClientStore()?.id))) throw new Error('无法访问此门店。');
@@ -483,14 +531,13 @@ function toast(message, type = 'success') {
   el.innerHTML = icon(type === 'error' ? 'alert' : 'check') + '<span>' + escape(message) + '</span>';
   document.querySelector('#toast-container').append(el); setTimeout(() => el.remove(), 4200);
 }
-const packingSaves = new WeakMap();
-function updatePacking(orderId, syncInputs = false) {
+const packingSaves = new Map();
+function updatePacking(orderId) {
   const order = model.state.orders.find(order => order.id === orderId);
   const detail = app.querySelector('.order-detail-page');
   if (!detail || detail.dataset.order !== orderId) return;
   if (!order) { render(); return; }
-  const stageChanged = detail.dataset.stage !== order.stage;
-  if (stageChanged) {
+  if (detail.dataset.stage !== order.stage) {
     syncNotificationBadge();
     detail.dataset.stage = order.stage;
     detail.querySelectorAll('[data-order-status]').forEach(el => { el.innerHTML = statusBadge(order.stage); });
@@ -502,62 +549,66 @@ function updatePacking(orderId, syncInputs = false) {
   detail.querySelector('.order-packing-panel > .progress-track .progress-fill').style.width = packedPercent(order) + '%';
   const editable = ['pending', 'packing'].includes(order.stage);
   order.items.forEach(line => {
-    const input = detail.querySelector(`[data-pack-input="${CSS.escape(line.productId)}"]`);
-    if (!input) return;
-    if (syncInputs && !input.dataset.dirty && !input.dataset.saving && !input.hasAttribute('aria-invalid')) input.value = line.packedQty;
-    input.disabled = !editable;
-    const row = input.closest('.detail-item'), check = row.querySelector('.pack-check');
-    const unit = line.unit || model.getProduct(line.productId).unit;
-    const raw = input.value.trim(), qty = Number(raw);
-    const valid = raw !== '' && validQuantity(qty, {unit}) && qty <= line.qty;
-    const complete = linePacked(line) && valid && qty === line.packedQty;
+    const row = detail.querySelector(`[data-packing-product="${CSS.escape(line.productId)}"]`);
+    if (!row) return;
+    const check = row.querySelector('.packing-toggle'), complete = linePacked(line);
+    const saving = packingSaves.has(orderId + ':' + line.productId);
     row.classList.toggle('complete', complete);
-    check.classList.toggle('checked', complete); check.setAttribute('aria-pressed', String(complete));
-    check.disabled = !editable || complete || !valid || qty !== line.qty || Boolean(input.dataset.saving);
-    check.setAttribute('aria-label', `${complete ? '已配齐' : '确认配齐'}${model.getProduct(line.productId).name}`);
-    check.innerHTML = icon('check') + (complete ? '已配齐' : '确认配齐');
-    const feedback = row.querySelector('.pack-row-feedback');
-    feedback.textContent = input.dataset.saving ? '保存中…' : !valid ? '请输入有效的实配数量' : qty < line.qty ? `还差 ${Number((line.qty - qty).toFixed(3))} ${unit}` : '';
+    row.toggleAttribute('data-packing-saving', saving);
+    row.setAttribute('aria-busy', String(saving));
+    check.setAttribute('aria-checked', String(complete));
+    check.disabled = !editable || saving;
+    check.setAttribute('aria-label', `${complete ? '取消配齐' : '确认配齐'}${line.productName || model.getProduct(line.productId).name}`);
+    const note = line.packingNote || '', noteButton = row.querySelector('.packing-note-button');
+    noteButton.hidden = !editable;
+    noteButton.classList.toggle('has-note', Boolean(note));
+    noteButton.setAttribute('aria-label', `${note ? '编辑' : '添加'}${line.productName || model.getProduct(line.productId).name}的异常备注`);
+    const noteArea=row.querySelector('.packing-item-note'),noteHTML=packingNoteHTML(order,line,editable);
+    if(noteArea.innerHTML!==noteHTML)noteArea.innerHTML=noteHTML;
+    row.querySelector('.packing-item-note').hidden = !note;
   });
+  const issueArea=detail.querySelector('[data-order-issue]');if(issueArea){const html=orderIssueHTML(order);if(issueArea.innerHTML!==html)issueArea.innerHTML=html;}
   const next = detail.querySelector('.order-detail-actions [data-action="stage"]');
   if (next && editable) {
     next.dataset.stage = order.stage === 'pending' ? 'packing' : 'ready';
-    const dirty = Boolean(detail.querySelector('[data-pack-input][data-dirty], [data-pack-input][data-saving], [data-pack-input][aria-invalid="true"]'));
-    next.disabled = dirty || (order.stage === 'packing' && packedCount(order) !== order.items.length);
+    next.disabled = [...packingSaves.values()].some(save => save.orderId === orderId) || (order.stage === 'packing' && packedCount(order) !== order.items.length);
     next.innerHTML = icon('check') + (order.stage === 'pending' ? '开始配货' : '确认配货完成');
   }
 }
-async function savePackingInput(input) {
-  const orderId = input.dataset.order;
-  if (packingSaves.has(input)) { await packingSaves.get(input); return savePackingInput(input); }
-  const order = model.state.orders.find(o => o.id === orderId);
-  const line = order?.items.find(item => item.productId === input.dataset.packInput);
-  const raw = input.value.trim(), qty = Number(raw);
-  if (!line || !raw || !validQuantity(qty, {unit:line.unit || model.getProduct(line.productId).unit}) || qty > line.qty) {
-    input.setAttribute('aria-invalid', 'true'); updatePacking(orderId);
-    throw new Error('请填写有效的实配数量，不能超过订货数量。');
-  }
-  if (line.packedQty === qty) { delete input.dataset.dirty; input.removeAttribute('aria-invalid'); updatePacking(orderId); return; }
-  input.dataset.saving = 'true'; updatePacking(orderId);
-  const operation = Promise.resolve().then(() => model.packLine(orderId, line.productId, qty));
-  packingSaves.set(input, operation);
-  try {
-    await operation;
-    if (input.value.trim() === raw) delete input.dataset.dirty;
-    input.removeAttribute('aria-invalid');
-  } catch(error) { input.setAttribute('aria-invalid','true'); throw error; }
-  finally { packingSaves.delete(input); delete input.dataset.saving; updatePacking(orderId); }
+async function savePackingCompletion(orderId, productId, complete) {
+  const key = orderId + ':' + productId;
+  if (packingSaves.has(key)) return packingSaves.get(key).operation;
+  const operation = Promise.resolve().then(() => model.setPackLineDone(orderId, productId, complete));
+  packingSaves.set(key, { orderId, operation }); updatePacking(orderId);
+  try { await operation; }
+  finally { packingSaves.delete(key); updatePacking(orderId); notificationsUI?.refresh(); }
 }
 async function runAction(action, el) {
   const id = el.dataset.id;
+  if(action==='open-own-team') {if(!isCloud)return;accountsUI.openOwnTeam();return nav('team');}
+  if(action==='organization-avatar') {
+    if(!isCloud||principal.role!=='admin'||principal.accountRole!=='owner')throw new Error('仅负责人可修改厨房头像。');
+    return accountsUI.openOrganizationAvatar({tenantId:principal.tenantId,name:model.state.settings?.companyName||company.name,avatarUrl:principal.organizationAvatarUrl,avatarVersion:principal.organizationAvatarVersion||0});
+  }
+  if(action==='manage-store-team') {
+    if(!isCloud||principal.role!=='admin'||principal.accountRole!=='owner')throw new Error('仅负责人可管理门店账号。');
+    const target=model.getStore(id);if(!target||target.deletedAt)throw new Error('门店不存在。');
+    accountsUI.openStoreTeam(id);nav('team');history.replaceState(null,'','?page=team&store='+encodeURIComponent(id));return;
+  }
   if(action==='reload-report-history' && isCloud) {model.reportHistoryError='';render();return;}
-  const adminActions = ['invite-store', 'store-prices', 'show-store-code', 'copy-store-code', 'pack-line', 'stage', 'confirm-delivery', 'record-issue', 'edit-price', 'stock', 'add-store', 'edit-store', 'delete-store', 'confirm-delete-store', 'add-product', 'import-products', 'download-template', 'export', 'view-orders', 'reset', 'reset-confirm'];
-  if (ui.role !== 'admin' && adminActions.includes(action)) throw new Error('此操作仅供中央厨房管理员使用。');
+  const adminActions = ['invite-store', 'store-prices', 'show-store-code', 'copy-store-code', 'pack-line', 'packing-note', 'resolve-packing-issue', 'resolve-order-issue', 'stage', 'confirm-delivery', 'record-issue', 'edit-price', 'stock', 'add-store', 'edit-store', 'delete-store', 'confirm-delete-store', 'add-product', 'import-products', 'download-template', 'export', 'view-orders', 'reset', 'reset-confirm'];
+  if (ui.role !== 'admin' && adminActions.includes(action)) throw new Error('此操作仅供管理员使用。');
   if (isCloud && principal.role === 'store' && [...adminActions, 'role-admin'].includes(action)) throw new Error('此操作需要管理员权限。');
   if (isCloud && ['reset', 'reset-confirm'].includes(action)) throw new Error('线上工作台不支持恢复演示数据。');
+  if(await notificationsUI?.handleAction(action,el))return;
+  if(action==='resolve-packing-issue'||action==='resolve-order-issue') {
+    if(action==='resolve-packing-issue')await model.resolvePackingIssue(id,el.dataset.product);else await model.resolveOrderIssue(id);
+    if(ui.orderId)updatePacking(ui.orderId);else render();notificationsUI?.refresh();toast('已处理，记录已保留。');return;
+  }
   if (action === 'management-tab') { if (ui.role !== 'admin') throw new Error('仅管理员可访问。'); return nav(el.dataset.group === 'products' ? 'catalogue' : 'stores', el.dataset.tab); }
   if (await accountsUI.handleAction(action, el)) return;
-  if (overviewUI.handleAction(action, el)) return;
+  if (await tasksUI.handleAction(action, el)) return;
+  if (await overviewUI.handleAction(action, el)) return;
   if (await settlementUI.handleAction(action, el)) return;
   if (await storeUI.handleAction?.(action, el)) { refreshLocalWhenReady(); return; }
   if (await businessUI.handleAction(action, el)) { refreshLocalWhenReady(); return; }
@@ -603,20 +654,21 @@ async function runAction(action, el) {
     if (date < DEMO_DATE) throw new Error(isCloud ? '配送日期不能早于今日。' : '配送日期不能早于演示日期。');
     const order = await model.submitOrder(activeStore().id, model.state.cart, date, note);
     model.state.cartNote = ''; model.save(); ui.date = date; nav('my-orders');
-    toast(`订货成功，${order.id} 已发送到中央厨房。${isCloud ? '' : '切换管理端即可配货。'}`); return;
+    toast(`订货成功，${order.id} 已发送到中央厨房。`); return;
   }
   if (action === 'store-prices') { ui.quoteStore = id; return nav('stores', 'quotes'); }
   if (action === 'pack-line') {
-    const o = model.state.orders.find(o => o.id === id), line = o.items.find(i => i.productId === el.dataset.product);
-    if (!line || !['pending','packing'].includes(o.stage)) throw new Error('当前订单不可修改配货。');
-    const input = app.querySelector(`[data-pack-input="${CSS.escape(line.productId)}"][data-order="${CSS.escape(id)}"]`);
-    if (!input || Number(input.value) !== line.qty) throw new Error('实配数量未补齐，不能确认配齐。');
-    await savePackingInput(input);
-    const savedLine = model.state.orders.find(order => order.id === id)?.items.find(item => item.productId === line.productId);
-    if (!savedLine || savedLine.packedQty !== savedLine.qty || Number(input.value) !== savedLine.qty) throw new Error('实配数量未补齐，不能确认配齐。');
-    if (linePacked(savedLine)) return;
-    await model.confirmPackLine(id, line.productId);
-    updatePacking(id);
+    const order = model.state.orders.find(order => order.id === id), line = order?.items.find(item => item.productId === el.dataset.product);
+    if (!line || !['pending','packing'].includes(order.stage)) throw new Error('当前订单不可修改配货。');
+    await savePackingCompletion(id, line.productId, !linePacked(line));
+    return;
+  }
+  if (action === 'packing-note') {
+    const order = model.state.orders.find(order => order.id === id), line = order?.items.find(item => item.productId === el.dataset.product);
+    if (!line || !['pending','packing'].includes(order.stage)) throw new Error('当前订单不可修改配货备注。');
+    const product = model.getProduct(line.productId);
+    const noteType=line.packingIssue?.type||(isPackingShortage(line)||!line.packingNote?'shortage':'other');
+    modal('异常备注', `<p class="modal-intro">${escape(line.productName || product.name)} · 需配 ${line.qty} ${escape(line.unit || product.unit)}</p><input type="hidden" name="orderId" value="${escape(id)}"><input type="hidden" name="productId" value="${escape(line.productId)}"><div class="field"><label for="packing-note-type">类型</label><select class="input" name="type" id="packing-note-type"><option value="shortage" ${noteType==='shortage'?'selected':''}>缺货</option><option value="other" ${noteType==='other'?'selected':''}>普通备注</option></select></div><div class="field"><label for="packing-note">备注</label><textarea class="input" name="note" id="packing-note" rows="3" maxlength="1000" placeholder="例如：缺货 2 袋，等待补货">${escape(line.packingNote || '')}</textarea></div>`, button('取消', 'close', 'secondary') + '<button type="submit" class="btn btn-primary">保存备注</button>', 'packing-note-form');
     return;
   }
   if (action === 'stage') {
@@ -653,13 +705,13 @@ async function runAction(action, el) {
   }
   if (action === 'download-template') return download('倉流供货目录模板.csv', '\uFEFF商品名称,品类,销售单位,规格,基础售价,可订库存\r\n新品鱼丸,冷冻品,袋,1kg/袋,680,40\r\n新品豆皮,常温品,袋,500g/袋,420,50');
   if (action === 'help' && ui.role === 'client') {
-    modal('门店订货指南', `<div class="guide-step"><span>01</span><div><strong>选择商品与数量</strong><p>每种商品选择一个购买单位，填写数量与期望配送日期。</p></div></div><div class="guide-step"><span>02</span><div><strong>跟进配货与配送</strong><p>提交后，在「我的订单」查看进度或向厨房反馈问题。</p></div></div><div class="guide-step"><span>03</span><div><strong>核对门店信息</strong><p>地址、联系人或识别码需要调整时，请联系中央厨房管理员。</p></div></div>`, button('知道了', 'close', 'primary')); return;
+    modal('门店订货指南', `<div class="guide-step"><span>01</span><div><strong>选择商品与数量</strong><p>每种商品选择一个购买单位，填写数量与期望配送日期。</p></div></div><div class="guide-step"><span>02</span><div><strong>跟进配货与配送</strong><p>提交后，在「我的订单」查看进度或向厨房反馈问题。</p></div></div><div class="guide-step"><span>03</span><div><strong>核对门店信息</strong><p>地址、联系人或识别码需要调整时，请联系管理员。</p></div></div>`, button('知道了', 'close', 'primary')); return;
   }
   if (action === 'help' && isCloud) {
     modal('倉流使用指南', `<div class="guide-step"><span>01</span><div><strong>管理商品与报价</strong><p>管理员盘点公司库存，配置售卖单位，并为每家门店设置额度与报价。</p></div></div><div class="guide-step"><span>02</span><div><strong>门店在线订货</strong><p>门店使用专属识别码登录，每种商品选择一个单位，再填写数量和配送日期。</p></div></div><div class="guide-step"><span>03</span><div><strong>配货与交付</strong><p>厨房逐项核对实配数量，全部配齐后确认出发，交付时记录签收人。</p></div></div><div class="notice">${icon('check')} 已保存的业务数据存放在云端。页面会定期更新，购物车草稿保留在当前设备。</div>`, button('知道了', 'close', 'primary')); return;
   }
   if (action === 'help') {
-    modal('从第一张订单开始', `<div class="guide-step"><span>01</span><div><strong>管理商品与门店报价</strong><p>在「商品管理」维护商品，在「门店管理」设置门店报价。</p></div></div><div class="guide-step"><span>02</span><div><strong>门店端：选商品，提交订货单</strong><p>在门店独立登录页输入识别码，按专属货单选择数量与配送日期。</p></div></div><div class="guide-step"><span>03</span><div><strong>厨房：逐项配齐，确认配送</strong><p>管理端选择同一配送日期，打开订单逐项核对实配数量，配齐后确认出发与送达。</p></div></div><div class="notice">${icon('help')} 这是浏览器本机交互预览，门店识别码与订单保存在当前浏览器。本地预览独立保存，正式工作台数据存放云端。</div>`, button('恢复演示数据', 'reset-confirm', 'ghost', '', 'refresh') + button('开始体验', 'close', 'primary')); return;
+    modal('从第一张订单开始', `<div class="guide-step"><span>01</span><div><strong>管理商品与门店报价</strong><p>在「商品管理」维护商品，在「门店管理」设置门店报价。</p></div></div><div class="guide-step"><span>02</span><div><strong>门店端：选商品，提交订货单</strong><p>在门店独立登录页输入识别码，选择商品数量与配送日期。</p></div></div><div class="guide-step"><span>03</span><div><strong>管理端：逐项配齐，确认配送</strong><p>管理端选择同一配送日期，打开订单，按需配数量逐项勾选，配齐后确认出发与送达。</p></div></div><div class="notice">${icon('help')} 这是浏览器本机交互预览，门店识别码与订单保存在当前浏览器。本地预览独立保存，正式工作台数据存放云端。</div>`, button('恢复演示数据', 'reset-confirm', 'ghost', '', 'refresh') + button('开始体验', 'close', 'primary')); return;
   }
   if (action === 'reset-confirm') return modal('恢复初始演示数据', '<p>将清空本浏览器中的新增商品、门店、报价与订单修改，重新载入初始示例数据。</p>', button('取消', 'close', 'secondary') + button('确认恢复', 'reset', 'danger'));
   if (action === 'reset') { model.reset(); ui.date = DEMO_DATE; ui.quoteStore = model.state.activeStoreId; closeOverlay(); ui.role = 'admin'; nav('overview'); return toast('已恢复初始演示数据。'); }
@@ -679,7 +731,8 @@ document.addEventListener('change', async event => {
   const input = event.target;
   try {
     if (accountsUI.handleChange(input)) return;
-    if (overviewUI.handleChange(input)) return;
+    if (tasksUI.handleChange(input)) return;
+    if (overviewUI.handleChange(input)) {notificationsUI?.refresh({force:true});return;}
     if (settlementUI.handleChange(input)) return;
     if (storeUI.updateAddress(input)) return;
     if (businessUI.handleInlineChange?.(input)) return;
@@ -699,16 +752,16 @@ document.addEventListener('change', async event => {
     }
     if (input.id === 'client-store') switchStore(input.value);
     if (input.dataset.cartInput) setCart(input.dataset.cartInput, input.value, false);
-    if (input.dataset.packInput) await savePackingInput(input);
     if (input.id === 'quote-tax-basis' && input.value === 'unspecified') document.querySelector('[name="taxRate"]').value = '';
     if (input.id === 'catalogue-file') { const file = input.files[0]; if (file) { if (file.size > 1000000) throw new Error('请使用小于 1 MB 的 CSV 文件。'); document.querySelector('#csv-text').value = await file.text(); } }
     if (input.id === 'delivery-date') { model.state.cartDeliveryDate = input.value; model.save(); }
     // Search rendering is debounced in the input handler; rendering from a
     // change/blur event would re-enter innerHTML while old inputs are removed.
-  } catch (error) { toast(error.message, 'error'); if (input.dataset.cartInput) render(); if (input.dataset.packInput) updatePacking(input.dataset.order); }
+  } catch (error) { toast(error.message, 'error'); if (input.dataset.cartInput) render(); }
 });
 let searchTimer;
 document.addEventListener('input', async event => {
+  if (tasksUI.handleInput(event.target)) return;
   if(event.target.id==='accounts-search'){accountsUI.search(event.target.value);return;}
   if (storeUI.updateAddress(event.target)) return;
   businessUI.handleInlineChange?.(event.target);
@@ -734,7 +787,6 @@ document.addEventListener('input', async event => {
   const input = event.target;
   try {
     if (input.dataset.cartInput) setCart(input.dataset.cartInput, input.value, false);
-    if (input.dataset.packInput) { input.dataset.dirty = 'true'; updatePacking(input.dataset.order); }
     input.removeAttribute('aria-invalid');
   } catch { input.setAttribute('aria-invalid', 'true'); }
 });
@@ -780,12 +832,14 @@ document.addEventListener('submit', async event => {
   if (submitButton) submitButton.disabled = true;
   try {
     if(await accountsUI.handleSubmit(form))return;
-    if (ui.role !== 'admin') throw new Error('管理表单仅供中央厨房管理员使用。');
+    if(await tasksUI.handleSubmit(form))return;
+    if (ui.role !== 'admin') throw new Error('管理表单仅供管理员使用。');
     if (form.id === 'sale-units-form') { await businessUI.handleUnitsSubmit(form); return; }
     if (form.id === 'price-form') { await model.setPrice(data.storeId, data.productId, data.price, data.taxBasis || 'unspecified', data.taxBasis === 'unspecified' || !data.taxRate ? null : Number(data.taxRate) / 100); closeOverlay(); render(); toast('门店专属报价与税口径已保存。'); }
     if (form.id === 'store-form') { await storeUI.createStore(form, data); }
     if (form.id === 'delivery-form') { if (isCloud) await model.confirmDelivery(data.orderId, data.receivedBy.trim()); else { await model.setStage(data.orderId, 'delivered'); const o = model.state.orders.find(o => o.id === data.orderId); o.receivedBy = data.receivedBy.trim(); model.save(); } closeOverlay(); render(); toast('已确认送达，门店端状态同步更新。'); }
-    if (form.id === 'issue-form') { const o = model.state.orders.find(o => o.id === data.orderId); if (!['pending', 'packing'].includes(o.stage)) throw new Error('仅待配货订单可记录配货异常。'); const issue = data.issue.trim(); if (!issue) throw new Error('请填写异常说明。'); if (isCloud) await model.recordIssue(o.id, issue); else { o.issue = issue; model.save(); model.remindOrder(o.id); } closeOverlay(); render(); toast('异常已记录，门店订单中可查看提醒。'); }
+    if (form.id === 'packing-note-form') { await model.setPackingNote(data.orderId, data.productId, data.note, data.type); closeOverlay(); updatePacking(data.orderId); notificationsUI?.refresh(); toast(data.note.trim() ? '备注已保存。' : '备注已清除。'); }
+    if (form.id === 'issue-form') { const o = model.state.orders.find(o => o.id === data.orderId); if (!['pending', 'packing'].includes(o.stage)) throw new Error('仅待配货订单可记录配货异常。'); const issue = data.issue.trim(); if (!issue) throw new Error('请填写异常说明。'); await model.recordIssue(o.id, issue); closeOverlay();if(ui.orderId)updatePacking(o.id);else render();notificationsUI?.refresh();toast('缺货已记录并加入待办。'); }
     if (form.id === 'stock-form') { await model.setStock(data.productId, data.stock); closeOverlay(); render(); toast('可订库存已更新。'); }
     if (form.id === 'product-form') { if (form.dataset.saving) return; form.dataset.saving = 'true'; const submit = form.querySelector('[type=submit]'); submit.disabled = true; const image = await readProductImage(form.querySelector('[name=productImage]')?.files[0]); await model.addProduct({ ...data, image, description: data.description || '', icon: data.category === '蔬菜' ? '🥬' : data.category === '肉类' ? '🥩' : data.category === '丸滑类' ? '🍡' : '🥟' }); closeOverlay(); ui.query = ''; ui.category = '全部商品'; render(); toast('商品已创建。'); }
     if (form.id === 'import-form') await importProducts(data.csvText);
@@ -797,11 +851,16 @@ window.addEventListener('popstate', event => {
   const params = new URLSearchParams(location.search), previous = event.state?.kuraflowView;
   const requested = params.get('page') || 'overview';
   closeOverlay();
-  ui.page = ['overview', 'orders', 'catalogue', 'stores', 'documents', 'materials', 'team'].includes(requested) ? requested : requested === 'delivery' ? 'orders' : requested === 'costs' ? 'catalogue' : 'overview';
+  ui.page = ['overview', 'tasks', 'orders', 'catalogue', 'stores', 'documents', 'materials', 'team'].includes(requested) ? requested : requested === 'delivery' ? 'orders' : requested === 'costs' ? 'catalogue' : 'overview';
   ui.orderId = ui.page === 'orders' ? params.get('order') : null;
   ui.productTab = requested === 'costs' || params.get('tab') === 'costs' ? 'costs' : 'inventory';
   ui.storeTab = params.get('tab') === 'quotes' ? 'quotes' : 'stores';
+  if(isCloud&&ui.page==='team') {
+    if(principal.role==='admin'&&principal.accountRole==='owner'&&params.get('store'))accountsUI.openStoreTeam(params.get('store'));
+    else accountsUI.openOwnTeam();
+  }
   ui.catalogueTrash = params.get('recycle') === '1';
+  if (ui.page === 'tasks') {ui.taskTab=params.get('tab')==='manual'?'manual':'system';ui.taskFilters[ui.taskTab]=params.get('filter')||'all';ui.businessDemo=params.has('demo')?params.get('demo')==='1':!isCloud;}
   if (ui.page === 'overview') { ui.businessRange=['week','month','custom'].includes(params.get('range'))?params.get('range'):'month';ui.businessStart=params.get('from')||'';ui.businessEnd=params.get('to')||'';ui.businessDemo=params.has('demo')?params.get('demo')==='1':!isCloud; }
   if (ui.page === 'documents') { ui.settlementStore=params.get('store') || '';ui.settlementMonth=params.get('month') || '';ui.settlementView=params.get('tab') === 'monthly' ? 'monthly' : 'orders';ui.settlementDemo=params.get('demo') === '1'; }
   ui.quoteStore = params.get('store') || ui.quoteStore;
@@ -811,7 +870,7 @@ window.addEventListener('popstate', event => {
 });
 window.addEventListener('storage', event => {
   if (isCloud || event.key !== STORAGE_KEY) return;
-  model.state = new KitchenModel().state; if (clientPortal) restoreClientDraft();
+  model.state = new KitchenModel().state; localNotifications?.refresh(); if (clientPortal) restoreClientDraft();
   // Incorporate other tabs' business writes without destroying an in-progress
   // stock/quote form. The existing controls save against this fresh model state.
   ui.localRefreshPending = true;
@@ -822,11 +881,45 @@ window.addEventListener('storage', event => {
 });
 const storeUI = createStoreUI({ model, ui, isCloud, personalAccounts:Boolean(principal?.accountRole), canManageAccounts:principal?.accountRole==='owner', escape, icon, button, titleHeading, managementTabs, managementHeading, modal, storeAvatar, closeOverlay, render, toast });
 const businessUI = createBusinessUI({ isCloud, model, ui, money, escape, icon, button, titleHeading, managementTabs, managementHeading, clientStoreSelect, cartPanel, qtyControl, cartTotal, cartItems, mobileCartBar, emptyState, modal, closeOverlay, activeStore, clientStoreHeader, statCard, render, nav, toast });
-const settlementUI = createSettlementUI({ model, ui, escape, money, icon, button, modal, activeStore, storeAvatar, company, statCard, emptyState, render, nav, toast, download });
-const accountsUI=createAccountsUI({request:cloudRequest,principal:principal||{role:'admin'},escape,button,icon,modal,closeOverlay,toast,render:()=>{if(ui.page==='team')render();}});
-const overviewUI = createOverviewUI({ model, ui, escape, money, icon, button, render, nav, modal, emptyState });
-document.addEventListener('keydown', event => overviewUI.handleKeydown(event));
-render();
+const settlementUI = createSettlementUI({ model, ui, escape, money, icon, button, modal, activeStore, storeAvatar, company, statCard, emptyState, render, nav, toast, download, getDocumentProfile:isCloud?()=>cloudRequest('/api/document-profile'):null });
+const accountsUI=createAccountsUI({request:cloudRequest,principal:principal||{role:'admin'},escape,button,icon,modal,closeOverlay,toast,render:()=>{if(ui.page==='team')render();},onProfileChange:syncAccountProfiles});
+if(isCloud&&ui.page==='team'&&principal.role==='admin'&&principal.accountRole==='owner'&&pageParams.get('store'))accountsUI.openStoreTeam(pageParams.get('store'));
+const tasksUI = createTasksUI({ model, ui, escape, icon, button, render, modal, closeOverlay, toast });
+const overviewUI = createOverviewUI({ model, ui, escape, money, icon, button, render, nav, modal, emptyState, closeOverlay, toast });
+if(!isCloud)localNotifications=createLocalNotifications({model,actorId:'local-admin',actorName:'本地管理员',storage:model.storage,onChange:()=>notificationsUI?.refresh()});
+notificationsUI=createNotificationsUI({
+  list:params=>isCloud?cloudRequest('/api/notifications?'+new URLSearchParams({...params,includeDemo:params.includeDemo?'1':'0'})):localNotifications.list(params),
+  markRead:body=>isCloud?cloudRequest('/api/notifications/read',body):localNotifications.markRead(body),
+  modal,button,icon,escape,includeDemo:()=>ui.businessDemo,enabled:()=>ui.role==='admin',onCount:syncNotificationBadge,
+  onNavigate:async item=>{
+    if(item.targetType==='order'){
+      let order=model.state.orders.find(order=>order.id===(item.orderId||item.targetId));if(!order&&isCloud){await model.loadReportHistory();order=model.state.orders.find(order=>order.id===(item.orderId||item.targetId));}if(!order)throw new Error('该货单暂未加载，请刷新业务页面后重试。');
+      closeOverlay();openOrderDetail(order.id);
+      if(item.productId)requestAnimationFrame(()=>{const line=app.querySelector('[data-packing-product="'+CSS.escape(item.productId)+'"]');line?.scrollIntoView({block:'center',behavior:'instant'});});
+    }else{
+      const product=model.getProduct(item.productId||item.targetId);if(!product||product.deletedAt)throw new Error('该商品已归档。');
+      closeOverlay();await runAction('stock',{dataset:{id:product.id}});
+    }
+  },
+});
+window.addEventListener('kuraflow-notifications-changed',()=>notificationsUI.refresh());
+const flowUI = createFlowUI({
+  enabled:isCloud && principal?.role === 'admin' && window.__KURAFLOW_FLOW_ENABLED__ === true,
+  principal,
+  getContext:() => ({page:ui.page, orderId:ui.orderId || undefined, storeId:ui.page === 'stores' ? ui.quoteStore : undefined, date:ui.date}),
+  onOpen:() => {ui.mobile = false; app.querySelector('.app-shell')?.classList.remove('mobile-open');},
+  onNavigate:url => {
+    const query=new URL(url,location.origin).searchParams,page=query.get('page');
+    if(window.matchMedia('(max-width:720px)').matches||query.get('product'))flowUI.close();
+    if(page==='orders'&&query.get('order')) {openOrderDetail(query.get('order'));return;}
+    if(page==='stores'&&query.get('store'))ui.quoteStore=query.get('store');
+    nav(page,query.get('tab')||'');
+    if(page==='catalogue'&&query.get('product')&&model.getProduct(query.get('product')))businessUI.handleAction('price-info',{dataset:{id:query.get('product')}});
+  },
+});
+document.addEventListener('keydown', event => {overviewUI.handleKeydown(event);tasksUI.handleKeydown(event);});
+render();notificationsUI.refresh();
+if(pageParams.get('flow')==='1')flowUI.open();
 
 if (isCloud) {
   let expired = false, refreshing = false;
@@ -842,7 +935,7 @@ if (isCloud) {
     if (!expired) { if (ui.orderId) updatePacking(ui.orderId, true); else render(); }
   });
   async function refreshCloudState() {
-    if (expired || refreshing || document.hidden || model.pending || overlay.firstChild || document.querySelector('.ui-calendar, .ui-select-menu') || app.querySelector('[data-pack-input][data-dirty], [data-pack-input][data-saving], [data-pack-input][aria-invalid="true"]')) return;
+    if (expired || refreshing || document.hidden || model.pending || overlay.firstChild || document.querySelector('.ui-calendar, .ui-select-menu') || app.querySelector('[data-packing-saving]')) return;
     if ([...document.querySelectorAll('.inline-editor-feedback')].some(el => el.textContent === '未保存')) return;
     refreshing = true;
     try {

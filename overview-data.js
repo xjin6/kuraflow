@@ -1,4 +1,5 @@
 import { roundAmount, tokyoDate } from './settlement-data.js';
+import { isPackingShortage, orderHasOpenIssue } from './notification-domain.js';
 
 const DAY=86400000;
 const tokyoDayFormat=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -75,12 +76,37 @@ export function businessAnalytics(model,range,{includeDemo=false}={}) {
 export function businessTasks(model,today=tokyoDate(),{includeDemo=false}={}) {
   const active=model.state.orders.filter(order=>(includeDemo||!order.isDemo)&&['pending','packing','ready','delivering'].includes(order.stage));
   const todayOrders=active.filter(order=>deliveryDay(order)===today);
-  return {today,packing:todayOrders.filter(order=>['pending','packing'].includes(order.stage)),ready:todayOrders.filter(order=>order.stage==='ready'),
-    delivering:todayOrders.filter(order=>order.stage==='delivering'),issues:active.filter(order=>order.issue),overdue:active.filter(order=>deliveryDay(order)&&deliveryDay(order)<today)};
+  const issues=active.filter(orderHasOpenIssue),overdue=active.filter(order=>deliveryDay(order)&&deliveryDay(order)<today);
+  const packing=todayOrders.filter(order=>['pending','packing'].includes(order.stage)),ready=todayOrders.filter(order=>order.stage==='ready');
+  const low=model.getProducts().filter(product=>(includeDemo||!product.isDemo)&&model.getStock(product.id)!==null&&model.getStock(product.id)<6);
+  const tasks=[];
+  for(const order of active) {
+    const date=deliveryDay(order),kind=orderHasOpenIssue(order)?'issue':date&&date<today?'overdue':date===today&&['pending','packing'].includes(order.stage)?'packing':date===today&&order.stage==='ready'?'ready':null;
+    if(!kind)continue;
+    const details=[];
+    if(order.issue&&!order.issueResolvedAt)details.push({text:order.issue});
+    for(const line of order.items||[])if(isPackingShortage(line))details.push({productId:line.productId,text:`${line.productName||model.getProduct(line.productId)?.name||line.productId}：${line.packingNote||'待补货'}`});
+    tasks.push({id:`order:${order.id}`,source:'system',kind,title:order.storeName||model.getStore(order.storeId)?.name||'已停用门店',
+      description:details.map(item=>item.text).join('；')||({overdue:'已超过配送日期',packing:'核对商品并完成配货',ready:'配货已完成，待安排配送'}[kind]||''),
+      orderId:order.id,date,dueDate:date||null,isOverdue:Boolean(date&&date<today),stage:order.stage,isDemo:Boolean(order.isDemo),issues:details});
+  }
+  for(const product of low)tasks.push({id:`product:${product.id}`,source:'system',kind:'stock',title:product.name,
+    description:`可订库存 ${model.getStock(product.id)} ${product.unit||''}`.trim(),productId:product.id,date:today,dueDate:null,isOverdue:false,isDemo:Boolean(product.isDemo)});
+  // Source describes how a task entered this list, not who reported an issue.
+  const manual=(model.state.manualTasks||[]).filter(task=>!task.deletedAt).map(task=>({id:`manual:${task.id}`,manualId:task.id,source:'manual',kind:'manual',
+    title:task.title,description:task.note||'',date:task.createdAt?tokyoDayFormat.format(new Date(task.createdAt)):'',createdAt:task.createdAt,completedAt:task.completedAt||null,
+    dueDate:validDay(task.dueDate)?task.dueDate:null,isOverdue:!task.completedAt&&validDay(task.dueDate)&&task.dueDate<today,
+    completedDate:task.completedAt?tokyoDayFormat.format(new Date(task.completedAt)):''}));
+  tasks.push(...manual.filter(task=>!task.completedAt));
+  const completedTasks=manual.filter(task=>task.completedAt).sort((a,b)=>b.completedAt.localeCompare(a.completedAt));
+  const priority={issue:0,overdue:1,manual:2,packing:3,ready:3,stock:4};
+  const urgency=task=>task.kind==='issue'?0:task.isOverdue?1:priority[task.kind];
+  tasks.sort((a,b)=>urgency(a)-urgency(b)||(a.dueDate||'9999-12-31').localeCompare(b.dueDate||'9999-12-31')||a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  return {today,packing,ready,delivering:todayOrders.filter(order=>order.stage==='delivering'),issues,overdue,low,tasks,completedTasks};
 }
 export function notificationQueue(model,role='admin',storeId='',{includeDemo=false}={}) {
   const orders=model.state.orders.filter(order=>(includeDemo||!order.isDemo)&&['pending','packing','ready','delivering'].includes(order.stage)&&(role==='admin'||order.storeId===storeId))
-    .slice().sort((a,b)=>Number(Boolean(b.issue))-Number(Boolean(a.issue))||String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
+    .slice().sort((a,b)=>Number(orderHasOpenIssue(b))-Number(orderHasOpenIssue(a))||String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
   const low=role==='admin'?model.getProducts().filter(product=>model.getStock(product.id)!==null&&model.getStock(product.id)<6):[];
   return {orders,low,count:orders.length+low.length};
 }

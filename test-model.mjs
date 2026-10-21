@@ -817,6 +817,46 @@ try {
     model.setStage(order.id, 'delivered');
   });
 
+  test('packing checklist completes saved quantities atomically and can undo without changing stock or notes', () => {
+    const { model, storeId, count, weight } = setup();
+    const order = model.submitOrder(storeId, { [count.id]: 2, [weight.id]: 0.125 });
+    const inventory = structuredClone(model.state.inventory);
+    const line = order.items[0];
+    model.setPackingNote(order.id, count.id, '  缺货，等待补货  ');
+    assert.equal(line.packingNote, '缺货，等待补货');
+    assert.equal(line.packedQty, 0);
+    assert.equal(order.stage, 'pending');
+    model.setPackLineDone(order.id, count.id, true);
+    assert.equal(order.stage, 'packing');
+    assert.equal(line.packedQty, 2);
+    assert.equal(line.packingConfirmed, true);
+    model.setPackLineDone(order.id, count.id, true);
+    assert.equal(line.packedQty, 2);
+    assert.throws(() => model.setStage(order.id, 'ready'), /未配齐/);
+    model.setPackLineDone(order.id, count.id, false);
+    assert.equal(line.packedQty, 0);
+    assert.equal(line.packingConfirmed, false);
+    assert.equal(line.packingNote, '缺货，等待补货');
+    assert.deepEqual(model.state.inventory, inventory);
+    const restored = new KitchenModel();
+    const savedLine = restored.state.orders.find(item => item.id === order.id).items[0];
+    assert.equal(savedLine.packingNote, '缺货，等待补货');
+    assert.equal(savedLine.packingConfirmed, false);
+    model.setPackingNote(order.id, count.id, '  ');
+    assert.equal(line.packingNote, undefined);
+    const before = structuredClone(order);
+    assert.throws(() => model.setPackLineDone(order.id, count.id, 'true'), /有效的配货状态/);
+    assert.throws(() => model.setPackLineDone(order.id, 'missing-product', true), /没有这项商品/);
+    assert.throws(() => model.setPackingNote(order.id, count.id, 'a'.repeat(1001)), /最多 1000 字/);
+    assert.deepEqual(order, before);
+    model.setPackLineDone(order.id, count.id, true);
+    model.setPackLineDone(order.id, weight.id, true);
+    assert.equal(order.items[1].packedQty, 0.125);
+    model.setStage(order.id, 'ready');
+    assert.throws(() => model.setPackLineDone(order.id, count.id, false), /不能修改/);
+    assert.throws(() => model.setPackingNote(order.id, count.id, '迟来的备注'), /不能修改/);
+  });
+
   test('store catalogue and unit choices exclude missing prices and clear obsolete cart quantities', () => {
     const { model, storeId, count, unquoted } = setup();
     model.setSaleUnits(unquoted.id, [{unit:'盒', perBase:1}, {unit:'袋', perBase:2}]);

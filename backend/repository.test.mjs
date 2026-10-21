@@ -10,7 +10,7 @@ let db;
 before(async () => {
   runtime = new Miniflare(convertV4MiniflareOptions({ workers: [{ name: 'repository-test', modules: true, script: 'export default { fetch() { return new Response("ok"); } };', compatibilityDate: '2026-10-08', d1Databases: { DB: 'business-test' } }] }));
   db = await runtime.getD1Database('DB');
-  for (const file of ['0001_business.sql', '0002_auth.sql']) {
+  for (const file of ['0001_business.sql', '0002_auth.sql', '0009_notifications.sql']) {
     const migration = await readFile(new URL('./migrations/' + file, import.meta.url), 'utf8');
     await db.exec(migration.replace(/--[^\n]*/g, '').replace(/\s+/g, ' '));
   }
@@ -55,11 +55,124 @@ function command(type, args, extra = {}) {
   return { type, args, idempotencyKey: crypto.randomUUID(), ...(expectedQuotes ? { expectedQuotes } : {}), ...extra };
 }
 
+test('manual todos persist for the kitchen with server-owned source and authorship', async () => {
+  const { admin, store } = await setup('manual-todo-save');
+  const actor = { ...admin, displayName: '负责人' };
+  const saved = await executeCommand(db, actor, command('addManualTask', [{ title: '  联系司机  ', note: '确认周末的配送时间', dueDate: '2026-10-25' }]));
+  const todo = saved.result;
+  assert.equal(todo.source, 'manual'); assert.equal(todo.title, '联系司机');
+  assert.equal(todo.note, '确认周末的配送时间');
+  assert.equal(todo.dueDate, '2026-10-25');
+  assert.equal(todo.createdBy, actor.userId); assert.equal(todo.createdByName, '负责人');
+  assert.equal(todo.completedAt, null); assert.equal(todo.deletedAt, null);
+  assert.deepEqual((await getState(db, { ...admin, userId: 'colleague' })).state.manualTasks, [todo]);
+  const clientState = (await getState(db, store)).state;
+  assert.equal(clientState.manualTasks, undefined);
+  assert.equal(JSON.stringify(clientState).includes('联系司机'), false);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_events WHERE tenant_id = ?').bind(admin.tenantId).first()).n, 0);
+});
+
+test('manual todo deadline edits persist without changing completed state or other task fields', async () => {
+  const {admin,store}=await setup('manual-todo-deadline');
+  const task=(await executeCommand(db,admin,command('addManualTask',[{title:'确认到货',note:'保留备注',dueDate:'2026-10-25'}]))).result;
+  const completed=(await executeCommand(db,admin,command('setManualTaskDone',[task.id,true]))).result;
+  const updated=(await executeCommand(db,admin,command('setManualTaskDueDate',[task.id,'2026-10-28']))).result;
+  assert.equal(updated.dueDate,'2026-10-28');assert.equal(updated.completedAt,completed.completedAt);assert.equal(updated.note,task.note);assert.equal(updated.source,'manual');
+  const snapshot=await loadState(db,admin.tenantId);
+  for(const date of ['',null,'2026-02-29','2026-4-1'])await assert.rejects(executeCommand(db,admin,command('setManualTaskDueDate',[task.id,date])),{status:400});
+  await assert.rejects(executeCommand(db,store,command('setManualTaskDueDate',[task.id,'2026-10-27'])),{status:403});
+  await assert.rejects(executeCommand(db,admin,command('addManualTask',[{title:'缺少日期'}])),{status:400});
+  assert.deepEqual(await loadState(db,admin.tenantId),snapshot);
+  assert.equal((await getState(db,admin)).state.manualTasks[0].dueDate,'2026-10-28');
+});
+
+test('manual todo completion and deletion retain content and can be undone', async () => {
+  const { admin } = await setup('manual-todo-lifecycle');
+  const todo = (await executeCommand(db, admin, command('addManualTask', [{ title: '确认采购', note: '保留此记录', dueDate: '2026-10-24' }]))).result;
+  const done = (await executeCommand(db, admin, command('setManualTaskDone', [todo.id, true]))).result;
+  assert.ok(Date.parse(done.completedAt)); assert.equal(done.note, todo.note);
+  const same = (await executeCommand(db, admin, command('setManualTaskDone', [todo.id, true]))).result;
+  assert.equal(same.completedAt, done.completedAt);
+  const reopened = (await executeCommand(db, admin, command('setManualTaskDone', [todo.id, false]))).result;
+  assert.equal(reopened.completedAt, null);
+  const removed = (await executeCommand(db, admin, command('deleteManualTask', [todo.id]))).result;
+  assert.ok(Date.parse(removed.deletedAt)); assert.equal(removed.note, todo.note);
+  const beforeInvalid = await loadState(db, admin.tenantId);
+  await assert.rejects(executeCommand(db, admin, command('setManualTaskDone', [todo.id, true])), /手动待办不存在/);
+  assert.deepEqual(await loadState(db, admin.tenantId), beforeInvalid);
+  const restored = (await executeCommand(db, admin, command('restoreManualTask', [todo.id]))).result;
+  assert.equal(restored.deletedAt, null); assert.equal(restored.completedAt, null);
+  assert.equal(restored.createdAt, todo.createdAt); assert.equal(restored.title, todo.title);
+  assert.equal(restored.dueDate, '2026-10-24');
+});
+
+test('manual todo commands reject stores, foreign IDs and forged source or author fields', async () => {
+  const a = await setup('manual-todo-acl-a'), b = await setup('manual-todo-acl-b');
+  const todo = (await executeCommand(db, a.admin, command('addManualTask', [{ title: '厨房 A 待办', dueDate: '2026-10-25' }]))).result;
+  const before = await loadState(db, a.admin.tenantId);
+  for (const type of ['addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask']) {
+    const args = type === 'addManualTask' ? [{ title: '伪造事项' }] : type === 'setManualTaskDone' ? [todo.id, true] : type === 'setManualTaskDueDate' ? [todo.id, '2026-10-25'] : [todo.id];
+    await assert.rejects(executeCommand(db, a.store, command(type, args)), { status: 403 });
+  }
+  for (const field of ['source', 'createdBy', 'tenantId', 'completedAt', 'id']) {
+    await assert.rejects(executeCommand(db, a.admin, command('addManualTask', [{ title: '伪造事项', [field]: 'forged' }])), { status: 400 });
+  }
+  for (const type of ['setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask']) {
+    await assert.rejects(executeCommand(db, b.admin, command(type, type === 'setManualTaskDone' ? [todo.id, true] : type === 'setManualTaskDueDate' ? [todo.id, '2026-10-25'] : [todo.id])), /手动待办不存在/);
+  }
+  assert.deepEqual(await loadState(db, a.admin.tenantId), before);
+  assert.deepEqual((await getState(db, b.admin)).state.manualTasks, []);
+});
+
+test('manual todo validation rejects invalid input without altering the saved snapshot', async () => {
+  const { admin } = await setup('manual-todo-validation');
+  const before = await loadState(db, admin.tenantId);
+  for (const value of [null, [], {}, { title: '  ' }, { title: '\u0000\u0001' }, { title: 12 }, { title: 'x'.repeat(121) }, { title: 'title', note: 'x'.repeat(501) }, { title: 'title', note: {} }]) {
+    await assert.rejects(executeCommand(db, admin, command('addManualTask', [value])), { status: 400 });
+  }
+  for (const dueDate of ['2026-02-29', '2026-04-31', '2026-13-01', '2026-10-20T00:00:00Z', '2026-1-2', ' 2026-10-20 ', 20261020, {}]) {
+    await assert.rejects(executeCommand(db, admin, command('addManualTask', [{ title: '确认日期', dueDate }])), { status: 400 });
+  }
+  await assert.rejects(executeCommand(db, admin, command('setManualTaskDone', ['todo-1', 'true'])), { status: 400 });
+  await assert.rejects(executeCommand(db, admin, command('addManualTask', [{ title: 'title' }, 'extra'])), { status: 400 });
+  assert.deepEqual(await loadState(db, admin.tenantId), before);
+});
+
+test('concurrent manual todo retries create once and separate additions do not overwrite each other', async () => {
+  const { admin } = await setup('manual-todo-race');
+  const retry = command('addManualTask', [{ title: '检查冷库', dueDate: '2026-10-25' }]);
+  const responses = await Promise.all([executeCommand(db, admin, retry), executeCommand(db, admin, retry)]);
+  assert.equal(new Set(responses.map(response => response.result.id)).size, 1);
+  assert.equal(responses.filter(response => response.replayed).length, 1);
+  await Promise.all([
+    executeCommand(db, admin, command('addManualTask', [{ title: '联系配送', dueDate: '2026-10-25' }])),
+    executeCommand(db, { ...admin, userId: 'colleague' }, command('addManualTask', [{ title: '整理库存', dueDate: '2026-10-25' }])),
+  ]);
+  const final = await loadState(db, admin.tenantId);
+  assert.equal(final.state.manualTasks.length, 3); assert.equal(final.revision, 3);
+  assert.deepEqual(final.state.manualTasks.map(todo => todo.title).sort(), ['检查冷库', '联系配送', '整理库存'].sort());
+});
+
+test('failed manual todo saves roll back data, revision and retry key together', async () => {
+  const { admin } = await setup('manual-todo-failure');
+  const before = await loadState(db, admin.tenantId);
+  await db.exec("CREATE TRIGGER fail_manual_todo_test BEFORE INSERT ON business_audit_log WHEN NEW.tenant_id = 'manual-todo-failure' BEGIN SELECT RAISE(ABORT, 'manual_todo_test_failure'); END;");
+  const request = command('addManualTask', [{ title: '需要成功保存的待办', dueDate: '2026-10-25' }]);
+  await assert.rejects(executeCommand(db, admin, request), /manual_todo_test_failure/);
+  assert.deepEqual(await loadState(db, admin.tenantId), before);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM command_idempotency WHERE tenant_id = ?').bind(admin.tenantId).first()).n, 0);
+  await db.exec('DROP TRIGGER fail_manual_todo_test');
+  await executeCommand(db, admin, request);
+  assert.equal((await getState(db, admin)).state.manualTasks.length, 1);
+});
+
 test('production seed drops prototype orders, stores entities independently and never overwrites a tenant', async () => {
   const model = new KitchenModel();
+  model.addManualTask({ title: '本地预览的私有待办', dueDate: '2026-10-25' });
   await seedTenant(db, { tenantId: 'seed-test', state: model.state });
   const loaded = await loadState(db, 'seed-test');
   assert.equal(loaded.state.orders.length, 0);
+  assert.deepEqual(loaded.state.manualTasks, []);
   assert.equal(loaded.state.products.length, model.state.products.length);
   assert.equal(loaded.state.stores.some(store => store.isDemoAccount), false);
   const core = JSON.parse((await db.prepare('SELECT core_json FROM tenants WHERE id = ?').bind('seed-test').first()).core_json);
@@ -412,6 +525,51 @@ test('packing requires explicit admin confirmation and rejects partial or change
   await executeCommand(db, admin, command('packLine', [order.id, pid, 2]));
   await executeCommand(db, admin, command('confirmPackLine', [order.id, pid]));
   await executeCommand(db, admin, command('setStage', [order.id, 'ready']));
+});
+
+test('packing checklist is atomic, retryable and scoped, with persisted private line notes', async () => {
+  const { admin, store, pid } = await setup('packing-checklist');
+  const other = await setup('packing-other-tenant');
+  const { result: order } = await executeCommand(db, store, command('submitOrder', [store.storeId, { [pid]: 2 }, tokyoToday()]));
+  const inventory = (await getState(db, admin)).state.inventory;
+  await assert.rejects(executeCommand(db, store, command('setPackLineDone', [order.id, pid, true])), { status: 403 });
+  await assert.rejects(executeCommand(db, store, command('setPackingNote', [order.id, pid, '越权备注'])), { status: 403 });
+  await assert.rejects(executeCommand(db, other.admin, command('setPackLineDone', [order.id, pid, true])), { status: 404 });
+  await assert.rejects(executeCommand(db, other.admin, command('setPackingNote', [order.id, pid, '越权备注'])), { status: 404 });
+  await assert.rejects(executeCommand(db, admin, command('setPackLineDone', [order.id, pid, 2])), /有效的配货状态/);
+  await assert.rejects(executeCommand(db, admin, command('setPackLineDone', [order.id, pid, true, 20])), /参数不正确/);
+  await assert.rejects(executeCommand(db, admin, command('setPackingNote', [order.id, pid, null])), /有效文字/);
+  await assert.rejects(executeCommand(db, admin, command('setPackingNote', [order.id, pid, 'a'.repeat(1001)])), /最多 1000 字/);
+
+  const completeRequest = command('setPackLineDone', [order.id, pid, true]);
+  // Concurrent updates must retain both the checklist state and the note.
+  await Promise.all([
+    executeCommand(db, admin, completeRequest),
+    executeCommand(db, admin, command('setPackingNote', [order.id, pid, '  缺货已补齐  '])),
+  ]);
+  assert.equal((await executeCommand(db, admin, completeRequest)).replayed, true);
+  await executeCommand(db, admin, command('setPackLineDone', [order.id, pid, true]));
+  const saved = await getState(db, admin);
+  assert.equal(saved.state.orders[0].stage, 'packing');
+  assert.equal(saved.state.orders[0].items[0].packedQty, 2);
+  assert.equal(saved.state.orders[0].items[0].packingConfirmed, true);
+  assert.equal(saved.state.orders[0].items[0].packingNote, '缺货已补齐');
+  assert.deepEqual(saved.state.inventory, inventory);
+  const clientLine = (await getState(db, store)).state.orders[0].items[0];
+  assert.equal(clientLine.packingNote, undefined);
+  assert.equal(clientLine.packingConfirmed, true);
+
+  const undone = await executeCommand(db, admin, command('setPackLineDone', [order.id, pid, false]));
+  assert.equal(undone.result.items[0].packedQty, 0);
+  assert.equal(undone.result.items[0].packingConfirmed, false);
+  assert.equal(undone.result.items[0].packingNote, '缺货已补齐');
+  await assert.rejects(executeCommand(db, admin, command('setStage', [order.id, 'ready'])), /未配齐/);
+  await executeCommand(db, admin, command('setPackingNote', [order.id, pid, '']));
+  assert.equal((await getState(db, admin)).state.orders[0].items[0].packingNote, undefined);
+  await executeCommand(db, admin, command('setPackLineDone', [order.id, pid, true]));
+  await executeCommand(db, admin, command('setStage', [order.id, 'ready']));
+  await assert.rejects(executeCommand(db, admin, command('setPackLineDone', [order.id, pid, false])), /不能修改/);
+  await assert.rejects(executeCommand(db, admin, command('setPackingNote', [order.id, pid, '不可修改'])), /不能修改/);
 });
 
 test('legacy stores support freeform edits and image removal without requiring missing original contact data', async () => {

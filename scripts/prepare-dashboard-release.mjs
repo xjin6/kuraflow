@@ -58,7 +58,7 @@ const metadata = {
     {type:'plain_text',name:'PUBLIC_ORIGIN',text:config.vars.PUBLIC_ORIGIN},
     {type:'plain_text',name:'LOCAL_TEST',text:'0'}],
   observability:config.observability,
-  annotations:{'workers/message':'Remove platform navigation from kitchen and store login screens','workers/tag':'login-entry-20261016'},
+  annotations:{'workers/message':'Right-aligned packing checklist, subtle completion, line notes and separate customer portals','workers/tag':'packing-checklist-20261019'},
 };
 const fingerprint = { workerSha256:createHash('sha256').update(source).digest('hex'), uiSha256:createHash('sha256').update(await fs.readFile(path.join(assetRoot,'ui-system.css'))).digest('hex') };
 const payload = {account,worker,manifest,files,source,metadata,fingerprint,migration};

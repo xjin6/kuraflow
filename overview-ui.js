@@ -1,8 +1,8 @@
-import {businessRange,businessAnalytics,businessTasks} from './overview-data.js';
+import {businessRange,businessAnalytics} from './overview-data.js';
 import {tokyoDate} from './settlement-data.js';
 
 export function createOverviewUI(ctx) {
-  const {model,ui,escape:esc,money,icon,button,render,nav,modal,emptyState}=ctx;
+  const {model,ui,escape:esc,money,icon,button,render,nav,modal,emptyState,closeOverlay=()=>{},toast=()=>{}}=ctx;
   const now=()=>tokyoDate();
   const scope=()=>({includeDemo:ui.businessDemo});
   const range=()=>{try{return businessRange(ui.businessRange,ui.businessStart,ui.businessEnd,now());}catch{ui.businessRange='month';return businessRange('month','','',now());}};
@@ -23,14 +23,13 @@ export function createOverviewUI(ctx) {
     return `<article class="business-metric"><div class="business-metric-label">${label}${icon(ico)}</div><strong class="business-metric-value ${unknown?'is-unknown':''}">${value}</strong>${change}</article>`;
   }
   function page() {
-    const selected=range(),analytics=businessAnalytics(model,selected,scope()),tasks=businessTasks(model,now(),scope()),current=analytics.current,previous=analytics.previous;
+    const selected=range(),analytics=businessAnalytics(model,selected,scope()),current=analytics.current,previous=analytics.previous;
     const periods=[['week','本周'],['month','本月'],['custom','自选日期']];
     const heading=`<div class="page-heading business-heading"><div class="heading-copy"><h1>经营概览</h1></div><div class="tabs business-periods" role="tablist" aria-label="经营统计周期">${periods.map(([key,label])=>`<button class="tab ${ui.businessRange===key?'active':''}" role="tab" aria-selected="${ui.businessRange===key}" data-action="business-range" data-range="${key}">${label}</button>`).join('')}</div></div>`;
     const dates=ui.businessRange==='custom'?`<div class="business-custom-range"><label><span>开始日期</span><input class="input" type="date" id="business-from" aria-label="经营统计开始日期" value="${selected.start}" max="${now()}" required></label><span class="business-date-separator">至</span><label><span>结束日期</span><input class="input" type="date" id="business-to" aria-label="经营统计结束日期" value="${selected.end}" max="${now()}" required></label>${button('应用','business-apply-range','secondary')}</div>`:'';
     const scopeBar=`<div class="business-scope"><div class="business-order-counts"><button class="text-button" data-action="business-orders">期间订单 <strong>${analytics.orders.length}</strong> 笔 ${icon('arrow')}</button><span>已送达 ${current.count} · 未完成 ${analytics.orders.filter(order=>['pending','packing','ready','delivering'].includes(order.stage)).length}</span></div>${model.state.orders.some(order=>order.isDemo)?`<label class="business-demo"><input id="business-demo" type="checkbox" ${ui.businessDemo?'checked':''}>含演示订单</label>`:''}</div>`;
-    const operations=`<section class="business-tasks" aria-label="今日待处理"><div class="business-tasks-label"><strong>今日待处理</strong><span>${shortDate(tasks.today)}</span></div><div class="business-task-links">${[['packing','待配货',tasks.packing.length],['ready','待出发',tasks.ready.length],['delivering','配送中',tasks.delivering.length],['issues','缺货异常',tasks.issues.length]].map(([key,label,count])=>`<button data-action="business-task" data-task="${key}" ${count?'':'disabled'} class="business-task-link ${key==='issues'&&count?'has-issue':''}"><span>${label}</span><strong>${count}</strong><span>${key==='issues'?'项':'单'}</span></button>`).join('')}</div>${tasks.overdue.length?`<button class="business-overdue" data-action="business-task" data-task="overdue">另有 ${tasks.overdue.length} 单往期未完成 ${icon('arrow')}</button>`:''}</section>`;
     const metrics=`<div class="business-period-caption"><span>${selected.start.replaceAll('-','/')} - ${selected.end.replaceAll('-','/')}<span class="business-compare-period">对比 ${shortDate(selected.previousStart)} - ${shortDate(selected.previousEnd)}</span></span><span>已送达订单 · 按配送日期 · 不含运费</span></div><section class="business-metrics" aria-label="经营指标">${metric('已送达货品金额',money(current.amount),comparison(current.amount,previous.amount,current.missing||previous.missing),'wallet')}${metric('已完成订单数',`${current.count}<small>笔</small>`,comparison(current.count,previous.count),'clipboard')}${metric('有成交门店数',`${current.stores}<small>家</small>`,comparison(current.stores,previous.stores),'store')}${metric('平均订单金额',!current.count?'—':current.average===null?'待确认':money(current.average),!current.count?'<span class="business-comparison">暂无已完成订单</span>':!previous.count?'<span class="business-comparison">上一周期暂无成交</span>':comparison(current.average,previous.average),'tag',current.average===null)}</section>${current.missing?`<p class="business-data-note">${icon('alert')}${current.missing} 项单价待确认，金额仅含已知部分，平均订单金额暂不计算。</p>`:''}`;
-    return `<div class="business-overview">${heading}${dates}${scopeBar}${operations}${metrics}${trend(analytics)}<div class="business-rankings">${storeTable(analytics)}${productTable(analytics)}</div></div>`;
+    return `<div class="business-overview">${heading}${dates}${scopeBar}${metrics}${trend(analytics)}<div class="business-rankings">${storeTable(analytics)}${productTable(analytics)}</div></div>`;
   }
   function trend(analytics) {
     const quantity=ui.businessMetric==='count',buckets=analytics.buckets,values=buckets.map(row=>quantity?row.count:row.amount),max=Math.max(...values,0);
@@ -52,11 +51,6 @@ export function createOverviewUI(ctx) {
     const rows=analytics.products.slice(0,5);
     return `<section class="section-card business-ranking"><div class="section-header"><div><h2 class="section-title">商品排行</h2><p>按已送达货品金额</p></div><button class="text-button" data-page="catalogue">全部商品 ${icon('arrow')}</button></div>${!rows.length?emptyState('暂无商品成交','完成配送后显示商品销售情况。','box'):`<div class="table-scroll" tabindex="0"><div class="table-scroll-hint">↔ 左右滑动查看全部列</div><table><thead><tr><th>商品</th><th class="align-right">数量</th><th class="align-right">货品金额</th></tr></thead><tbody>${rows.map((row,index)=>`<tr><td><div class="business-product-name"><span class="business-rank">${String(index+1).padStart(2,'0')}</span><div><button class="product-name-link" data-action="price-info" data-id="${esc(row.product.id)}">${esc(row.product.name)}</button><span class="cell-secondary">${row.count} 笔订单</span></div></div></td><td class="align-right business-quantities">${row.quantities.map(q=>`<span>${q.qty} ${esc(q.unit)}</span>`).join('')}</td><td class="align-right business-numeric">${money(row.amount)}${row.missing?'<span class="cell-secondary">部分单价待确认</span>':''}</td></tr>`).join('')}</tbody></table></div>`}</section>`;
   }
-  function taskOrders(key) {
-    const tasks=businessTasks(model,now(),scope()),orders=tasks[key] || [];
-    const titles={packing:'今日待配货',ready:'今日待出发',delivering:'今日配送中',issues:'待处理缺货异常',overdue:'往期未完成订单'};
-    orderList(titles[key] || '待处理订单',orders);
-  }
   function orderList(title,orders) {
     const stages={pending:'待配货',packing:'配货中',ready:'待配送',delivering:'配送中',delivered:'已送达'};
     modal(title,`<div class="notification-list">${orders.map(order=>`<div class="notification-row"><div><strong>${esc(model.getStore(order.storeId)?.name || order.storeId)}</strong><p>${esc(order.id)}${order.isDemo?' · 演示':''} · ${esc(order.deliveryDate)} · ${stages[order.stage]||esc(order.stage)}${order.issue?' · '+esc(order.issue):''}</p></div>${button('查看','order-detail','secondary',`data-id="${esc(order.id)}"`,'arrow')}</div>`).join('')||emptyState('暂无订单','','clipboard')}</div>`,button('关闭','close','secondary'));
@@ -69,7 +63,7 @@ export function createOverviewUI(ctx) {
     return true;
   }
   function handleAction(action,el) {
-    if(!['business-range','business-apply-range','business-metric','business-task','business-orders'].includes(action))return false;
+    if(!['business-range','business-apply-range','business-metric','business-orders'].includes(action))return false;
     if(ui.role!=='admin')throw new Error('仅管理员可查看经营数据。');
     if(action==='business-range') {
       const previous=range(),next=el.dataset.range;
@@ -81,7 +75,6 @@ export function createOverviewUI(ctx) {
       businessRange('custom',start,end,now());ui.businessStart=start;ui.businessEnd=end;ui.businessRange='custom';saveURL();render();
     } else if(action==='business-metric') {ui.businessMetric=el.dataset.metric==='count'?'count':'amount';render();}
     else if(action==='business-orders') orderList('期间订单',businessAnalytics(model,range(),scope()).orders);
-    else taskOrders(el.dataset.task);
     return true;
   }
   function handleKeydown(event) {

@@ -1,5 +1,7 @@
 import { KitchenModel, SALE_UNIT_OPTIONS } from '../data.js';
 import { resolveJapanAddress } from '../japan-addresses.js';
+import { deriveNotificationEvents } from '../notification-domain.js';
+import { notificationStatements } from './notifications.js';
 
 const MAX_ACTIVE_ORDERS = 1000;
 const MAX_PRODUCTS = 5000;
@@ -9,7 +11,8 @@ const MAX_HISTORY = 200;
 const COMMANDS = new Set([
   'setWarehouseStock', 'setStoreAllocation', 'setStoreUnitAllocation',
   'setPrice', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setWarehouseUnitStock', 'addProduct', 'deleteProduct', 'restoreProduct', 'addStore', 'updateStore', 'deleteStore',
-  'submitOrder', 'setStage', 'packLine', 'confirmPackLine', 'remindOrder', 'recordIssue', 'confirmDelivery', 'setStock', 'importProducts',
+  'submitOrder', 'setStage', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'remindOrder', 'recordIssue', 'resolveOrderIssue', 'confirmDelivery', 'setStock', 'importProducts',
+  'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask',
 ]);
 const STORE_COMMANDS = new Set(['submitOrder', 'remindOrder', 'recordIssue', 'confirmDelivery']);
 const clone = value => value !== null && typeof value === 'object' ? structuredClone(value) : value;
@@ -133,7 +136,7 @@ function safeQuote(quote = {}) {
 }
 
 function safeOrder(order) {
-  const result = select(order, ['id', 'storeId', 'storeName', 'date', 'deliveryDate', 'submittedAt', 'stage', 'isDemo', 'origin', 'note', 'departedAt', 'deliveredAt', 'receivedBy', 'issue', 'issueReportedAt', 'shipping', 'shippingTax']);
+  const result = select(order, ['id', 'storeId', 'storeName', 'date', 'deliveryDate', 'submittedAt', 'stage', 'isDemo', 'origin', 'note', 'departedAt', 'deliveredAt', 'receivedBy', 'issue', 'issueReportedAt', 'issueResolvedAt', 'shipping', 'shippingTax']);
   result.items = (order.items || []).map(item => select(item, ['productId', 'productName', 'spec', 'qty', 'price', 'packedQty', 'packingConfirmed', 'unit', 'baseQty', 'perBase', 'taxBasis', 'taxRate', 'quoteKind']));
   return result;
 }
@@ -256,6 +259,20 @@ function validateCommand(principal, command) {
   if (!Array.isArray(command.args) || command.args.length > 6) reject('操作参数不正确。');
   identifier(command.idempotencyKey, '请求编号');
   if (principal.role === 'store' && !STORE_COMMANDS.has(command.type)) reject('门店账号不能执行这项管理操作。', 403, 'FORBIDDEN');
+  if (command.type === 'addManualTask') {
+    if (command.args.length !== 1) reject('待办操作参数不正确。');
+    plainObject(command.args[0], '待办内容');
+    if (Object.keys(command.args[0]).some(key => !['title', 'note', 'dueDate'].includes(key))) reject('待办内容字段不正确。');
+    textField(command.args[0].title, '待办事项', 120, true);
+    textField(command.args[0].note, '备注', 500);
+    textField(command.args[0].dueDate, '截止日期', 10, true);
+  }
+  if (['setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask'].includes(command.type)) {
+    if (command.args.length !== (['setManualTaskDone', 'setManualTaskDueDate'].includes(command.type) ? 2 : 1)) reject('待办操作参数不正确。');
+    identifier(command.args[0], '待办');
+    if (command.type === 'setManualTaskDone' && typeof command.args[1] !== 'boolean') reject('请选择有效的待办状态。');
+    if (command.type === 'setManualTaskDueDate') textField(command.args[1], '截止日期', 10, true);
+  }
   if (['deleteProduct', 'restoreProduct'].includes(command.type)) {
     if (command.args.length !== 1) reject('商品操作参数不正确。');
     identifier(command.args[0], '商品');
@@ -264,9 +281,28 @@ function validateCommand(principal, command) {
     if (command.args.length !== 1) reject('门店操作参数不正确。');
     identifier(command.args[0], '门店');
   }
-  if (command.type === 'confirmPackLine') {
+  if (['confirmPackLine', 'resolvePackingIssue'].includes(command.type)) {
     if (command.args.length !== 2) reject('配货操作参数不正确。');
     identifier(command.args[0], '订单'); identifier(command.args[1], '商品');
+  }
+  if (['setPackLineDone', 'setPackingNote'].includes(command.type)) {
+    if (command.type === 'setPackLineDone' ? command.args.length !== 3 : ![3, 4].includes(command.args.length)) reject('配货操作参数不正确。');
+    identifier(command.args[0], '订单'); identifier(command.args[1], '商品');
+    if (command.type === 'setPackLineDone' && typeof command.args[2] !== 'boolean') reject('请选择有效的配货状态。');
+    if (command.type === 'setPackingNote') {
+      if (typeof command.args[2] !== 'string') reject('配货备注请填写有效文字，最多 1000 字。');
+      textField(command.args[2], '配货备注', 1000);
+      if (command.args.length === 4 && !['shortage', 'other'].includes(command.args[3])) reject('请选择有效的配货备注类型。');
+    }
+  }
+  if (command.type === 'recordIssue') {
+    if (command.args.length !== 2) reject('异常操作参数不正确。');
+    identifier(command.args[0], '订单');
+    textField(command.args[1], '异常说明', 1000, true);
+  }
+  if (command.type === 'resolveOrderIssue') {
+    if (command.args.length !== 1) reject('异常操作参数不正确。');
+    identifier(command.args[0], '订单');
   }
   if (command.type === 'submitOrder') {
     identifier(command.args[0], '门店');
@@ -357,6 +393,17 @@ function assertExpectedQuotes(model, args, expectedQuotes) {
 
 function applyCommand(model, principal, command) {
   const args = clone(command.args);
+  if (['addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask'].includes(command.type)) {
+    // Source and authorship are assigned by the command handler, never by a
+    // submitted field or by whether an upstream packing note was typed by hand.
+    const todo = model[command.type](...args);
+    if (command.type === 'addManualTask') {
+      todo.createdBy = principal.userId;
+      todo.createdByName = principal.displayName || '';
+    }
+    todo.updatedBy = principal.userId;
+    return todo;
+  }
   if (['addStore', 'updateStore'].includes(command.type)) {
     const value = args[command.type === 'updateStore' ? 1 : 0];
     if (command.type === 'addStore' || ['prefectureCode', 'municipalityCode', 'wardCode'].some(key => value[key])) {
@@ -365,7 +412,7 @@ function applyCommand(model, principal, command) {
         address:[divisions.prefecture,divisions.municipality,divisions.ward,(value.addressDetail || '').trim()].filter(Boolean).join('') });
     }
   }
-  if (['setStage', 'packLine', 'confirmPackLine', 'remindOrder', 'recordIssue', 'confirmDelivery'].includes(command.type)) assertOrderAccess(model, principal, args[0]);
+  if (['setStage', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'remindOrder', 'recordIssue', 'resolveOrderIssue', 'confirmDelivery'].includes(command.type)) assertOrderAccess(model, principal, args[0]);
   if (command.type === 'submitOrder') {
     assertExpectedQuotes(model, args, command.expectedQuotes);
     if (model.state.orders.filter(order => order.stage !== 'delivered').length >= MAX_ACTIVE_ORDERS) reject('未完成订单已达上限，请联系管理员处理。', 409, 'ACTIVE_ORDER_LIMIT');
@@ -388,13 +435,6 @@ function applyCommand(model, principal, command) {
   if (command.type === 'importProducts') {
     if (model.state.products.length + args[0].length > MAX_PRODUCTS) reject('商品数量已达当前上限。', 409, 'CAPACITY_LIMIT');
     return args[0].map(product => applyCommand(model, principal, { type: 'addProduct', args: [product] }));
-  }
-  if (command.type === 'recordIssue') {
-    textField(args[1], '异常说明', 1000, true);
-    const order = assertOrderAccess(model, principal, args[0]);
-    order.issue = args[1].trim();
-    order.issueReportedAt = new Date().toISOString();
-    return order;
   }
   if (command.type === 'confirmDelivery') {
     textField(args[1], '签收人', 120, true);
@@ -450,6 +490,10 @@ export async function executeCommand(db, principal, command) {
     next.reminders = (next.reminders || []).slice(0, MAX_HISTORY);
     const guardId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const notifications = deriveNotificationEvents(previous, next, {
+      eventKey: JSON.stringify([principal.userId, command.idempotencyKey]),
+      actorId: principal.userId, actorName: principal.displayName || '', now,
+    });
     const coreJson = json(boundedCore(next));
     if (new TextEncoder().encode(coreJson).byteLength > 1500000) reject('公司资料超过当前容量，请联系管理员归档。', 409, 'CAPACITY_LIMIT');
     const statements = [
@@ -461,6 +505,7 @@ export async function executeCommand(db, principal, command) {
         orders: changedRows(previous.orders, next.orders),
         documents: changedRows(previous.documents, next.documents),
       }),
+      ...notificationStatements(db, principal.tenantId, notifications),
       ...(command.type === 'deleteStore' ? [
         db.prepare("UPDATE users SET active = 0 WHERE tenant_id = ? AND store_id = ? AND role = 'store'")
           .bind(principal.tenantId, command.args[0]),
@@ -494,6 +539,8 @@ export async function seedTenant(db, { tenantId, state, companyName }) {
   // Never make prototype packing/delivery examples into production orders.
   initial.orders = initial.orders.filter(order => !order.isDemo && !String(order.id).startsWith('DEMO-') && !['manual_preview', 'screenshot_example'].includes(order.origin));
   initial.reminders = [];
+  // Manual preview work is not part of a new company's initial business data.
+  initial.manualTasks = [];
   initial.priceHistory = (initial.priceHistory || []).slice(0, MAX_HISTORY);
   initial.stores = initial.stores.map(({ isDemoAccount, accessCode, ...store }) => store);
   initial.settings ||= {};

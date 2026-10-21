@@ -4,6 +4,7 @@ import {setImmediate as nextTurn} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {JSDOM, VirtualConsole} from 'jsdom';
+import {createAccountsUI} from '../accounts-ui.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bundles = await Promise.all(['platform-app.js', 'cloud-bootstrap.js'].map(async entry => {
@@ -98,11 +99,12 @@ function submit(window, form) {
 }
 
 function assertCustomerLoginLinks(document, portal) {
-  assert.deepEqual([...document.querySelectorAll('.accounts-login-links a')].map(a => a.search),
-    [`?login=${portal === 'kitchen' ? 'store' : 'kitchen'}`]);
-  assert.equal(document.querySelector('a[href*="login=platform"]'), null,
-    'customer login pages must not expose a platform entry');
-  assert.doesNotMatch(document.querySelector('.accounts-login').textContent, /平台/);
+  assert.equal(document.querySelector('.accounts-login-links'), null,
+    'customer login pages must not offer any cross-portal navigation');
+  assert.equal(document.querySelector('a[href*="login="]'), null);
+  assert.equal(document.querySelector('h1').textContent, portal === 'kitchen' ? '管理端登录' : '门店端登录');
+  assert.equal(document.title, `${portal === 'kitchen' ? '管理端登录' : '门店端登录'} | 倉流 KURAFLOW`);
+  assert.doesNotMatch(document.querySelector('.accounts-login').textContent, /平台|厨房端/);
 }
 
 function clobberFormId(window, form) {
@@ -162,7 +164,10 @@ test('platform create intercepts a clobbered form ID and sends one JSON POST wit
   await until(() => document.getElementById('account-master-code'), 'owner code handoff did not open');
   await until(() => document.querySelector('.accounts-seat'), 'created kitchen team did not load');
   assert.equal(document.getElementById('account-master-code').value, 'TEST-ONLY-0000-0001');
-  assert.equal(document.querySelector('[data-action="platform-team"]').classList.contains('active'), true);
+  assert.equal(document.querySelector('.account-handoff a').search, '?login=kitchen');
+  assert.match(document.querySelector('.account-handoff').textContent, /管理端/);
+  assert.deepEqual([...document.querySelectorAll('.topbar-right a')].map(a => a.textContent), ['管理端', '门店端']);
+  assert.equal(document.querySelector('[data-action="platform-kitchens"]').classList.contains('active'), true);
   assert.equal(document.querySelector('.accounts-seat').textContent, '负责人独立 · 管理员 0 / 3');
   assert.equal(window.location.href, originalUrl, 'private values must not become URL query parameters');
 });
@@ -205,7 +210,7 @@ for (const scenario of [
   {name: 'owner plus three enabled administrators', accounts: [owner, member(1), member(2), member(3)], used: 3},
   {name: 'disabled administrator frees a seat independently of the owner', accounts: [owner, member(1), member(2), member(3, 'disabled')], used: 2},
 ]) {
-  test(`employee management sidebar: ${scenario.name}`, async t => {
+  test(`employee management from its kitchen: ${scenario.name}`, async t => {
     const {document, calls} = await fixture(t, {
       route: call => {
         if (call.path === '/api/platform/kitchens') return jsonResponse({kitchens: [kitchen]});
@@ -214,10 +219,10 @@ for (const scenario of [
       },
     });
     await until(() => document.querySelector('[data-action="accounts-kitchen-new"]'), 'kitchen list did not load');
-    click(document, '[data-action="platform-team"]');
+    click(document, '[data-action="accounts-kitchen-team"]');
     await until(() => document.querySelector('.accounts-seat'), 'employee management did not load from its sidebar entry');
     assert.equal(document.querySelector('h1').textContent, '员工管理');
-    assert.equal(document.querySelector('[data-action="platform-team"]').classList.contains('active'), true);
+    assert.equal(document.querySelector('[data-action="platform-kitchens"]').classList.contains('active'), true);
     assert.equal(document.getElementById('accounts-tenant').value, kitchen.id);
     assert.ok(calls.some(call => call.path === '/api/team/list?tenant=tenant-test'));
     assert.equal(document.querySelector('.accounts-seat').textContent, `负责人独立 · 管理员 ${scenario.used} / 3`);
@@ -300,6 +305,8 @@ test('platform login exposes only a complex key field and posts it to the platfo
   assert.equal(document.querySelector('[role="tablist"]'), null);
   assert.deepEqual([...document.querySelectorAll('.accounts-login-links a')].map(a => a.search),
     ['?login=kitchen', '?login=store']);
+  assert.deepEqual([...document.querySelectorAll('.accounts-login-links a')].map(a => a.textContent),
+    ['管理端', '门店端']);
   const form = document.getElementById('account-login');
   assert.equal(form.method, 'post');
   assert.deepEqual([...form.querySelectorAll('input')].map(input => input.name), ['key']);
@@ -377,4 +384,28 @@ test('administrator login deep link selects the credential tab on initial render
   assert.ok(document.getElementById('login-password'));
   assert.equal(document.getElementById('login-code'), null);
   assertCustomerLoginLinks(document, 'store');
+});
+
+
+test('customer owner-code dialogs have no cross-portal entry', async t => {
+  const dom = new JSDOM('<div id="dialog"></div>');
+  t.after(() => dom.window.close());
+  const dialog = dom.window.document.getElementById('dialog');
+  for (const role of ['admin', 'store']) {
+    const accounts = createAccountsUI({
+      principal: {role, tenantId: kitchen.id, storeId: role === 'store' ? 'store-test' : null},
+      request: async (path, body) => {
+        assert.equal(path, '/api/team/master-key');
+        assert.equal(body.tenantId, kitchen.id);
+        return {account: {name: '测试负责人', role}, masterCode: 'TEST-ONLY-0000-0004'};
+      },
+      escape: String, button: () => '', icon: () => '',
+      modal: (_title, contents) => { dialog.innerHTML = contents; },
+      closeOverlay: () => {}, toast: () => {}, render: () => {},
+    });
+    await accounts.handleAction('accounts-scope-key', {dataset: {}});
+    assert.ok(dialog.querySelector('#account-master-code'));
+    assert.equal(dialog.querySelector('a'), null, `${role} owner dialog must not expose another portal`);
+    assert.match(dialog.textContent, role === 'store' ? /门店端/ : /管理端/);
+  }
 });
