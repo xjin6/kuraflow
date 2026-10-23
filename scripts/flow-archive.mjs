@@ -1,3 +1,4 @@
+import {cleanAttachmentRefs} from '../flow-attachment-data.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
@@ -27,6 +28,7 @@ function messages(input) {
   return input.map(row=>{
     if(!row||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||row.text.length>40000)fail('对话内容格式不正确。');
     return {role:row.role,text:row.text,
+      ...(row.role==='user'&&row.attachments?.length?{attachments:cleanAttachmentRefs(row.attachments)}:{}),
       ...(row.role==='user'&&typeof row.requestId==='string'&&UUID.test(row.requestId)?{requestId:row.requestId}:{}),
       ...(row.role==='assistant'?{
         ...(row.pending===true?{pending:true}:{}),
@@ -96,7 +98,7 @@ export function createFlowArchive({privateDir}) {
     const clean=messages(body.messages),draft=body.draft??'';
     if(typeof draft!=='string'||draft.length>4000)fail('草稿过长。');
     for(const image of clean.flatMap(row=>row.images||[]))if(image.url.startsWith('/api/flow/artifacts/'))await getArtifact(p,image.url.split('/').at(-1));
-    const row={id:prior?.id||randomUUID(),title:clip(clean.find(m=>m.role==='user')?.text.replace(/\s+/g,' ').trim(),48)||'新对话',updatedAt:new Date().toISOString(),version:(prior?.version||0)+1,messages:clean,draft};
+    const row={id:prior?.id||randomUUID(),title:clip(clean.find(m=>m.role==='user')?.text.replace(/\s+/g,' ').trim(),48)||'新对话',updatedAt:new Date().toISOString(),version:(prior?.version||0)+1,messages:clean,draft,attachments:cleanAttachmentRefs(body.attachments||[])};
     await write(p,row);return publicRow(row);
   });}
   async function remove(p,id){return serial(p,async()=>{const row=await read(p,id);if(!row.deletedAt)await write(p,{...row,deletedAt:new Date().toISOString(),version:row.version+1});return {ok:true};});}

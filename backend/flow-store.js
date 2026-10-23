@@ -1,3 +1,4 @@
+import {cleanAttachmentRefs} from '../flow-attachment-data.js';
 import {cleanFlowMessages,sanitizeFlowSVG} from './flow-content.js';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -25,7 +26,7 @@ const changed=result=>Number(result?.meta?.changes||0)>0;
 function version(value) {if(!Number.isSafeInteger(value)||value<1)fail('内容已在其他窗口更新，请重新打开后继续。',409);return value;}
 function publicConversation(row) {
   const data=JSON.parse(row.data_json);
-  return {id:row.id,title:row.title,version:row.version,messages:data.messages,draft:data.draft,updatedAt:row.updated_at};
+  return {id:row.id,title:row.title,version:row.version,messages:data.messages,draft:data.draft,attachments:data.attachments||[],updatedAt:row.updated_at};
 }
 function base64url(bytes) {
   let raw='';for(const byte of bytes)raw+=String.fromCharCode(byte);
@@ -154,7 +155,7 @@ export function createFlowStore(env,{now=Date.now}={}) {
       const found=await db.prepare(`SELECT id FROM flow_artifacts WHERE tenant_id=? AND user_id=? AND id IN (${batch.map(()=>'?').join(',')})`).bind(...ids,...batch).all();
       if(found.results.length!==batch.length)fail('图片不存在或已不可用。',404);
     }
-    const data=JSON.stringify({messages,draft});if(encoder.encode(data).length>512000)fail('对话内容过大，请新建对话。',413);
+    const data=JSON.stringify({messages,draft,attachments:cleanAttachmentRefs(body.attachments||[])});if(encoder.encode(data).length>512000)fail('对话内容过大，请新建对话。',413);
     const id=prior?.id||crypto.randomUUID(),title=clip(messages.find(message=>message.role==='user')?.text.replace(/\s+/g,' ').trim(),48)||'新对话',updatedAt=new Date(now()).toISOString();
     const row=prior
       ?await db.prepare('UPDATE flow_conversations SET title=?,data_json=?,version=version+1,updated_at=? WHERE tenant_id=? AND user_id=? AND id=? AND version=? AND deleted_at IS NULL RETURNING *').bind(title,data,updatedAt,...ids,id,body.version).first()

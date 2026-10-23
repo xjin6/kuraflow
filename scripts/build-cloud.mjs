@@ -38,6 +38,12 @@ for(const color of ['blue','purple','orange'])for(const suffix of ['.svg','-32.p
  await fs.copyFile(path.join(root,'public/brand',file),path.join(target,'public/brand',file));
 }
 await fs.mkdir(path.join(target,'public/vendor'),{recursive:true});
+await fs.mkdir(path.join(target,'public/vendor/pdfjs'),{recursive:true});
+for(const name of ['pdf.mjs','pdf.worker.min.mjs'])await fs.copyFile(path.join(root,'node_modules/pdfjs-dist/legacy/build',name),path.join(target,'public/vendor/pdfjs',name));
+for(const name of ['cmaps','standard_fonts'])await fs.cp(path.join(root,'node_modules/pdfjs-dist',name),path.join(target,'public/vendor/pdfjs',name),{recursive:true});
+await fs.copyFile(path.join(root,'node_modules/pdfjs-dist/LICENSE'),path.join(target,'public/vendor/pdfjs/LICENSE'));
+
 await fs.copyFile(path.join(root,'public/vendor/pdf-engine.LICENSE.txt'),path.join(target,'public/vendor/pdf-engine.LICENSE.txt'));
 await fs.writeFile(path.join(target,'_headers'),`/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  X-Frame-Options: DENY\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\n`);
+await build({entryPoints:[path.join(root,'flow-attachment-reader.js')],outfile:path.join(target,'public/vendor/flow-attachment-reader.js'),bundle:true,format:'esm',platform:'browser',target:['safari17','chrome120'],minify:true});
 console.log('Cloud bundle built; private catalogue/cost/account/statement data excluded.');

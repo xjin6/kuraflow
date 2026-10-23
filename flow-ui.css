@@ -46,7 +46,7 @@
 .flow-suggestions button svg { width:15px; height:15px; color:#9babba; flex-shrink:0; }
 .flow-suggestions button:hover { color:#38586e; background:white; border-color:#b8c8d5; }
 .flow-message { margin:12px 0 23px; }
-.flow-message-user { display:flex; justify-content:flex-end; margin-top:6px; }
+.flow-message-user { display:flex; flex-direction:column; align-items:flex-end; justify-content:flex-end; margin-top:6px; }
 .flow-user-text { max-width:92%; padding:10px 13px; border-radius:10px 10px 3px 10px; background:#edf1f5; color:#3e5262; font-size:13px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
 .flow-assistant-label { display:flex; align-items:center; gap:7px; color:#526d80; margin-bottom:11px; }
 .flow-assistant-label > .flow-mark { width:20px; height:20px; }
@@ -200,3 +200,36 @@
   .flow-image-preview img { max-height:400px; }
 }
 @media(prefers-reduced-motion:reduce) { .flow-history-list li { transition:none; } }
+
+/* Attachments share the compact composer and persist as scoped references. */
+.flow-compose-tools { display:flex; align-items:center; gap:8px; min-width:0; }
+.flow-compose-tools > span { font-size:11px; color:var(--ui-muted); }
+.flow-compose-tools .flow-attach-button { width:32px; height:32px; }
+.flow-draft-attachments { display:flex; flex-direction:column; gap:6px; }
+.flow-draft-attachments:empty { display:none; }
+.flow-attachment-chip { display:flex; align-items:center; gap:6px; max-width:100%; padding:6px 8px; border:1px solid var(--ui-border); border-radius:6px; background:var(--ui-subtle); color:var(--ui-text); font:12px/1.5 var(--font-ui); text-align:left; }
+.flow-attachment-chip > button, .flow-attachment-chip > span { display:flex; align-items:center; gap:7px; min-width:0; border:0; padding:0; background:none; color:inherit; font:inherit; }
+.flow-attachment-chip > button:first-child, .flow-attachment-chip > span { flex:1; }
+.flow-attachment-chip button { cursor:pointer; }
+.flow-attachment-chip svg { flex:none; width:15px; height:15px; }
+.flow-attachment-chip span { overflow-wrap:anywhere; }
+.flow-attachment-chip small { color:var(--ui-muted); font-size:10px; }
+.flow-attachment-chip [data-flow-action="remove-attachment"] { flex:none; width:28px; height:28px; justify-content:center; }
+.flow-attachment-chip.has-error, .flow-attachment-error { color:var(--ui-danger); }
+.flow-attachment-error { font-size:12px; padding:5px 0; }
+.flow-message-user > .flow-attachment-chip { margin-top:7px; }
+.flow-attachment-preview { border:1px solid var(--ui-border); border-radius:8px; background:var(--ui-surface); margin-bottom:8px; }
+.flow-attachment-preview header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 12px; font-size:12px; }
+.flow-attachment-preview header strong { overflow-wrap:anywhere; }
+.flow-attachment-pages { max-height:240px; overflow:auto; padding:0 12px 12px; }
+.flow-attachment-pages h3 { margin:8px 0; font-size:12px; color:var(--ui-muted); }
+.flow-attachment-pages pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 var(--font-ui); margin:0; }
+.flow-attachment-pages img { display:block; max-width:100%; height:auto; }
+.flow-attachment-preview[hidden], .flow-attachment-error[hidden], #flow-attachment-input[hidden] { display:none; }
+.flow-import-proposal dl { max-height:320px; overflow:auto; }
+.flow-import-proposal dd { white-space:pre-wrap; }
+@media(max-width:720px) { .flow-compose-tools .flow-attach-button { width:40px; height:40px; }.flow-attachment-chip [data-flow-action="remove-attachment"] { width:36px; height:36px; } }
+.flow-answer-table { overflow-x:auto; max-width:100%; margin:10px 0; border:1px solid var(--ui-border); border-radius:6px; }
+.flow-answer-table table { min-width:100%; font:12px/1.6 var(--font-ui); }
+.flow-answer-table th, .flow-answer-table td { padding:8px 10px; min-width:80px; white-space:normal; overflow-wrap:anywhere; vertical-align:top; }
+.flow-answer-table th { background:var(--ui-subtle); font-weight:600; }

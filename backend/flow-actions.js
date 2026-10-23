@@ -15,6 +15,7 @@ const object=(properties,required=[])=>({type:'object',additionalProperties:fals
 const storeFields={name:string('门店名称'),prefectureCode:string('都道府县代码',2),municipalityCode:string('市区町村代码',5),wardCode:optionalText('行政区代码',5),addressDetail:string('街道、门牌及楼层',180),contact:string('联系人'),phone:string('联系电话',24)};
 const definition=(name,label,description,properties,required)=>({name,label,description,parameters:object(properties,required)});
 export const FLOW_WRITE_TOOLS = [
+  definition('flow_import_attachment_rows','导入报价／库存','从用户上传资料准备批量变更；先搜索匹配商品、单位与门店。仅按用户聊天要求导入销售报价或实物总库存，采购成本不能当销售价。每行必须引用本轮附件 ID 和页码／工作表位置。最多 20 行，先生成前后对照卡，点击确认才原子保存。',{rows:{type:'array',minItems:1,maxItems:20,description:'已核对的导入行',items:object({kind:{type:'string',enum:['quote','stock']},attachmentId:string('本轮附件 ID',36),sourceLocation:string('附件页码／工作表及行号',160),productId:id('商品 ID'),unit,storeId:id('门店 ID'),price:{type:'number',minimum:0},quantity:{type:'number',minimum:0},taxBasis:{type:'string',enum:['unspecified','inclusive','exclusive']},taxRate:{type:'number',minimum:0,maximum:1}},['kind','attachmentId','sourceLocation','productId','unit'])}},['rows']),
   definition('flow_create_store','新增门店','根据用户明确提供的资料真实新增门店。先用 flow_find_address 确认地区代码；缺少名称、联系人、电话或详细地址时先问用户，不能编造。负责人登录由系统开通，工具不返回负责人码。',storeFields,['name','prefectureCode','municipalityCode','addressDetail','contact','phone']),
   definition('flow_update_store','修改门店','修改已查询确认的本厨房门店，仅更改用户指定的资料字段。不能更改身份、负责人码或图片。',{storeId:id('门店 ID'),changes:{...object({...storeFields,contact:optionalText('联系人'),phone:optionalText('联系电话',24),address:optionalText('完整地址',500),addressDetail:optionalText('详细地址',500)}),minProperties:1}},['storeId','changes']),
   definition('flow_create_product','新增商品','真实新增商品；名称、类目、单位需由用户确定。未提供单价或库存时保持未设置，不填零，也不从成本推算价格。',{name:string('商品名称'),category:string('商品类目'),unit,spec:optionalText('规格',200),description:optionalText('商品说明',4000),basePrice:{type:'number',minimum:0,description:'明确指定的初始销售单价（日元）'},stock:{type:'number',minimum:0,description:'明确指定的初始库存'}},['name','category','unit']),
@@ -52,7 +53,7 @@ const canonical=value=>value&&typeof value==='object'?Object.fromEntries(Object.
 const digest=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)))),byte=>byte.toString(16).padStart(2,'0')).join('');
 const pick=(row,keys)=>Object.fromEntries(keys.filter(key=>Object.hasOwn(row||{},key)).map(key=>[key,row[key]]));
 
-export function createFlowActions({request,env,principal,requestId,data,checkAccess,readPolicy=()=>getFlowPolicy(env,principal.tenantId),onMutation=()=>{},onProposal=()=>{}}) {
+export function createFlowActions({request,env,principal,requestId,data,attachmentRecords=[],checkAccess,readPolicy=()=>getFlowPolicy(env,principal.tenantId),onMutation=()=>{},onProposal=()=>{}}) {
   assertFlowPrincipal(principal);
   if(!principal.userId||!['owner','member'].includes(principal.accountRole)||typeof requestId!=='string'||!FLOW_REQUEST_ID.test(requestId))fail('请刷新页面后重新发送操作。',400);
   const db=env.DB,prefix=`flow:${requestId}:`;
@@ -109,6 +110,16 @@ export function createFlowActions({request,env,principal,requestId,data,checkAcc
       if(!row)fail('当前厨房中未找到该记录，或记录已删除。',404);
       return row;
     };
+    if(name==='flow_import_attachment_rows') {
+      const rows=args.rows.map(row=>{
+        const source=attachmentRecords.find(doc=>doc.id===row.attachmentId);
+        if(!source||!source.parts.some(part=>row.sourceLocation===part.label||row.sourceLocation.startsWith(part.label+' ')||row.sourceLocation.startsWith(part.label+' ·')||row.sourceLocation.startsWith(part.label+'，')))fail('导入来源必须引用本轮附件中的页码或工作表。');
+        active('products',row.productId);
+        if(row.kind==='quote'){if(!row.storeId||row.price===undefined||!row.taxBasis||row.quantity!==undefined)fail('报价行需指定门店、销售单价和税口径。');active('stores',row.storeId);return {type:'setUnitQuote',args:[row.storeId,row.productId,row.unit,row.price,row.taxBasis,row.taxRate??null]};}
+        if(row.quantity===undefined||row.price!==undefined||row.storeId!==undefined||row.taxBasis!==undefined||row.taxRate!==undefined)fail('库存行只填写实物总数量和单位。');
+        return {type:'setWarehouseUnitStock',args:[row.productId,row.unit,row.quantity]};
+      });return {type:'applyAttachmentRows',args:[rows]};
+    }
     if(name==='flow_create_store') {
       const parts=resolveJapanAddress(args),address=[parts.prefecture,parts.municipality,parts.ward,args.addressDetail.trim()].join('');
       if(state.stores.some(row=>!row.deletedAt&&row.name?.trim()===args.name.trim()&&row.address===address))fail('已存在同名同地址门店，请查看现有记录。',409);
@@ -192,6 +203,10 @@ export function createFlowActions({request,env,principal,requestId,data,checkAcc
     return result.results.map(publicProposal);
   }
   function review(name,args,result) {
+    if(name==='flow_import_attachment_rows') {
+      const value=n=>n==null?'未设置':String(n);
+      return {label:'导入报价／库存',recordLabel:result.name,impact:'确认后整批保存；任一行失败时整批不保存。报价仅用于新订单，历史成交价保留。库存为实物总量。',details:result.rows.map((row,index)=>({label:`${index+1}. ${row.productName} · ${row.unit}`,value:[row.spec?`规格：${row.spec}`:'',row.kind==='quote'?`门店：${row.storeName}\n销售单价：${value(row.before)} → ${value(row.after)} 日元\n税口径：${({unspecified:'未设置',inclusive:'含税',exclusive:'未税'})[row.taxBasis]}${row.taxRate==null?' · 税率未设置':' · '+row.taxRate*100+'%'}`:`实物总库存：${value(row.before)} → ${value(row.after)} ${row.unit}`,`来源：${attachmentRecords.find(doc=>doc.id===args.rows[index].attachmentId).name} · ${args.rows[index].sourceLocation}`].filter(Boolean).join('\n')}))};
+    }
     const details=[],add=(label,value)=>{if(value!==undefined&&value!==null&&value!=='')details.push({label,value:String(value)});};
     const labels={name:'名称',category:'类目',unit:'单位',spec:'规格',description:'说明',basePrice:'销售单价（日元）',stock:'库存',contact:'联系人',phone:'电话',title:'事项',note:'备注',dueDate:'截止日期',quantity:'实物总库存',price:'销售单价（日元）',taxRate:'税率'};
     const values=args.changes||args;

@@ -1,3 +1,4 @@
+import {modelAttachments} from './flow-attachments.js';
 import {flowToolFailure} from './flow-schema.js';
 // Worker-native Copilot transport. All credentials belong to the current kitchen
 // and stay in the encrypted store; this module never starts a local runtime.
@@ -73,7 +74,7 @@ async function readJSON(response, signal, limit = MAX_JSON) {
 }
 function usableModels(value) {
   if (!Array.isArray(value?.data)) throw problem('FLOW_UPSTREAM_INVALID', 'GitHub 模型目录无效，请稍后重试。');
-  const models = new Map(), protocols = new Map();
+  const models = new Map(), protocols = new Map(), vision = new Map();
   for (const row of value.data.slice(0, 1000)) {
     if (!safeModel(row?.id) || row.policy?.state === 'disabled' || row.model_picker_enabled === false) continue;
     if (row.capabilities?.type && row.capabilities.type !== 'chat') continue;
@@ -83,8 +84,9 @@ function usableModels(value) {
     if (!protocol) continue;
     models.set(row.id, {id:row.id, name:typeof row.name === 'string' ? row.name.slice(0, 160) : row.id});
     protocols.set(row.id, protocol);
+    vision.set(row.id,row.capabilities?.supports?.vision);
   }
-  return {models:[...models.values()], protocols};
+  return {models:[...models.values()], protocols,vision};
 }
 function selected(models, preferred) {
   if (preferred && !models.some(row => row.id === preferred)) return {model:preferred, modelUnavailable:true, message:'原先选择的模型已不可用，请重新选择。'};
@@ -282,10 +284,11 @@ export function createFlowProvider({store, fetchImpl = fetch, now = Date.now, re
     } finally { await store.releaseLease(lockScope, lockOwner); }
   }
 
-  async function chat({principal, message, history = [], model, systemPrompt = '', toolDefinitions = [], runTool, onEvent = () => {}, signal}) {
+  async function chat({principal, message, history = [], attachments, model, systemPrompt = '', toolDefinitions = [], runTool, onEvent = () => {}, signal}) {
     scope(principal);
+    const attached=modelAttachments(attachments);
     if (typeof message !== 'string' || !message.trim() || message.length > 6000 || !Array.isArray(history) || history.length > 12 || JSON.stringify(history).length > 24000 || typeof systemPrompt !== 'string' || systemPrompt.length > 30000) throw problem('FLOW_INVALID_INPUT', '问题或会话内容过长，请缩短后重试。', 400);
-    if (!Array.isArray(toolDefinitions) || toolDefinitions.length > 20 || typeof runTool !== 'function') throw problem('FLOW_INVALID_INPUT', 'Flow 查询工具配置无效。', 400);
+    if (!Array.isArray(toolDefinitions) || toolDefinitions.length > 24 || typeof runTool !== 'function') throw problem('FLOW_INVALID_INPUT', 'Flow 查询工具配置无效。', 400);
     const tools = toolDefinitions.map(tool => {
       if (!tool || !/^flow_[a-z0-9_]{1,55}$/.test(tool.name) || !tool.parameters || tool.parameters.type !== 'object') throw problem('FLOW_INVALID_INPUT', 'Flow 查询工具配置无效。', 400);
       return {type:'function', function:{name:tool.name, description:String(tool.description || '').slice(0,4000), parameters:tool.parameters}};
@@ -304,12 +307,16 @@ export function createFlowProvider({store, fetchImpl = fetch, now = Date.now, re
       const saved = await remember(principal, current.version, snapshot);
       if (!saved && (await store.getConnection(principal))?.version !== current.version) throw problem('FLOW_CONFLICT', '模型连接已更新，请重新提问。', 409);
       if (!models.some(row => row.id === wanted)) throw problem('FLOW_MODEL_UNAVAILABLE', '所选模型当前不可用，请刷新模型列表后重新选择。', 400);
-      const messages = [{role:'system',content:systemPrompt}, ...history.filter(item => ['user','assistant'].includes(item?.role) && typeof item.content === 'string').map(item => ({role:item.role,content:item.content.slice(0,6000)})), {role:'user',content:message.trim()}];
-      const protocol = protocols.get(wanted), input = messages.slice(1);
+      if(attached.images.length&&snapshot.vision.get(wanted)===false)throw problem('FLOW_VISION_UNAVAILABLE','当前模型不支持读图，请联系平台更换支持图片的模型，或上传文字版 PDF／表格。',400);
+      const protocol = protocols.get(wanted);
+      const userText=message.trim()+(attached.text?'\n\n'+attached.text:'');
+      const content=attached.images.length ? [{type:protocol==='responses'?'input_text':'text',text:userText},...attached.images.map(image=>protocol==='responses'?{type:'input_image',image_url:'data:image/jpeg;base64,'+image.data,detail:'high'}:{type:'image_url',image_url:{url:'data:image/jpeg;base64,'+image.data,detail:'high'}})] : userText;
+      const messages = [{role:'system',content:systemPrompt}, ...history.filter(item => ['user','assistant'].includes(item?.role) && typeof item.content === 'string').map(item => ({role:item.role,content:item.content.slice(0,6000)})), {role:'user',content}];
+      const input = messages.slice(1);
       let calls = 0;
       for (let iteration = 0; iteration < 8; iteration++) {
         checkAbort(clock.signal);
-        if (JSON.stringify(protocol === 'responses' ? input : messages).length > 1000000) throw problem('FLOW_INVALID_INPUT', '本次查询结果过大，请缩小范围。', 400);
+        if (JSON.stringify(protocol === 'responses' ? input : messages).length > 3200000) throw problem('FLOW_INVALID_INPUT', '本次查询结果过大，请缩小范围。', 400);
         const body = protocol === 'responses'
           ? {model:wanted, instructions:systemPrompt, input, stream:true, store:false, include:['reasoning.encrypted_content'], ...(tools.length ? {tools:tools.map(tool => ({type:'function',...tool.function,strict:false})),tool_choice:'auto'} : {})}
           : {model:wanted, messages, stream:true, ...(tools.length ? {tools,tool_choice:'auto'} : {})};
@@ -369,6 +376,7 @@ export function createFlowProvider({store, fetchImpl = fetch, now = Date.now, re
         if (response.status === 401) throw problem('FLOW_UPSTREAM_UNAUTHORIZED', 'GitHub Copilot 连接已失效，请重新连接。', 401);
         if (response.status === 429 || response.status === 402) throw problem('FLOW_RATE_LIMIT', 'GitHub Copilot 当前额度或请求频率已达上限，请稍后重试。', 429);
         if (response.status === 403) throw problem('FLOW_MODEL_UNAVAILABLE', '所选模型没有调用权限，请重新选择。', 403);
+        if([400,415,422].includes(response.status)&&(body.input||body.messages||[]).some(row=>Array.isArray(row.content)&&row.content.some(part=>['input_image','image_url'].includes(part.type))))throw problem('FLOW_VISION_UNAVAILABLE','当前模型无法读取这些图片，请联系平台检查模型，或上传文字版 PDF／表格。',400);
         throw problem('FLOW_UPSTREAM_FAILED', 'GitHub Copilot 暂时无法回答，请稍后重试。');
       }
       if (response.headers.get('content-type')?.includes('application/json')) {

@@ -1,3 +1,4 @@
+import {cleanAttachmentRefs} from '../flow-attachment-data.js';
 import {SaxesParser} from 'saxes';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -30,7 +31,8 @@ export function cleanFlowMessages(input) {
   if(JSON.stringify(input).length>512000)fail('对话内容过大，请新建对话。',413);
   return input.map(row=>{
     if(!row||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||row.text.length>40000)fail('对话内容格式不正确。');
-    return {role:row.role,text:row.text,...(row.role==='user'&&typeof row.requestId==='string'&&UUID.test(row.requestId)?{requestId:row.requestId}:{}),...(row.role==='assistant'?{
+    return {role:row.role,text:row.text,
+      ...(row.role==='user'&&row.attachments?.length?{attachments:cleanAttachmentRefs(row.attachments)}:{}),...(row.role==='user'&&typeof row.requestId==='string'&&UUID.test(row.requestId)?{requestId:row.requestId}:{}),...(row.role==='assistant'?{
       ...(row.pending===true?{pending:true}:{}),
       ...(Array.isArray(row.mutations)?{mutations:row.mutations.slice(0,6).map(cleanFlowMutation).filter(Boolean)}:{}),
       ...(Array.isArray(row.proposals)?{proposals:row.proposals.slice(0,6).map(cleanFlowProposal).filter(Boolean)}:{}),

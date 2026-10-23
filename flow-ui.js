@@ -1,5 +1,7 @@
+import {FLOW_ATTACHMENT_ACCEPT,cleanAttachmentRefs,attachmentId} from './flow-attachment-data.js';
 const FLOW_ICON = '<img class="flow-mark" src="/flow-mark.svg" width="24" height="24" alt="" aria-hidden="true" draggable="false">';
 const GLYPHS = {
+  attach:'<path d="m21 11-9 9a6 6 0 0 1-8-8L15 1a4 4 0 0 1 6 6L10 18a2 2 0 0 1-3-3L17 5"/>',
   close:'<path d="m6 6 12 12M18 6 6 18"/>', plus:'<path d="M12 5v14M5 12h14"/>',
   send:'<path d="M12 19V5m-6 6 6-6 6 6"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',
   settings:'<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
@@ -32,7 +34,16 @@ export function formatFlowText(value) {
     return href ? `<a class="flow-answer-link" href="${escape(href)}">${plain(match[1])}</a>` : plain(part);
   }).join('');
   let result = '', list = null;
-  for (const line of String(value || '').split('\n')) {
+  const lines=String(value||'').split('\n');
+  const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split(/(?<!\\)\|/).map(cell=>cell.trim().replace(/\\\|/g,'|'));
+  for (let position=0;position<lines.length;position++) {
+    const line=lines[position],header=cells(line),divider=lines[position+1]&&cells(lines[position+1]);
+    if(line.includes('|')&&header.length>=2&&header.length<=12&&divider?.length===header.length&&divider.every(cell=>/^:?-{3,}:?$/.test(cell))){
+      if(list){result+=`</${list}>`;list=null;}
+      result+='<div class="flow-answer-table"><table><thead><tr>'+header.map(cell=>'<th>'+inline(cell)+'</th>').join('')+'</tr></thead><tbody>';position++;
+      while(position+1<lines.length&&lines[position+1].includes('|')&&cells(lines[position+1]).length===header.length){position++;result+='<tr>'+cells(lines[position]).map(cell=>'<td>'+inline(cell)+'</td>').join('')+'</tr>';}
+      result+='</tbody></table></div>';continue;
+    }
     const bullet = /^\s*([-*]|\d+[.)、])\s+(.+)$/.exec(line), next = bullet ? (/^\d/.test(bullet[1]) ? 'ol' : 'ul') : null;
     if (list && list !== next) { result += `</${list}>`; list = null; }
     if (next && !list) { list = next; result += `<${list}>`; }
@@ -61,15 +72,17 @@ function renderImage(image) {
 }
 const newConversation = value => ({id:value?.id || null, version:value?.version,
   messages:Array.isArray(value?.messages)?value.messages.map(message=>message.role==='assistant'&&message.pending?{...message,pending:false,error:message.error||'上次处理已中断，请核对保存结果。'}:message):[],
-  draft:value?.draft || '', revision:0, savedRevision:0, error:'', saving:false, queue:Promise.resolve()});
+  draft:value?.draft || '', attachments:cleanAttachmentRefs(value?.attachments||[]), revision:0, savedRevision:0, error:'', saving:false, queue:Promise.resolve()});
 
-export function createFlowUI({enabled = true, initialStatus = null, getContext = () => ({}), onOpen = () => {}, onBusinessChange = () => {}, endpoint = '/api/flow', principal = {}, onNavigate = null, request: requestOverride, send: sendOverride} = {}) {
+export function createFlowUI({enabled = true, initialStatus = null, getContext = () => ({}), onOpen = () => {}, onBusinessChange = () => {}, endpoint = '/api/flow', principal = {}, onNavigate = null, request: requestOverride, send: sendOverride, prepareAttachment} = {}) {
   if (!enabled) return {launcher: () => '', sync() {}, open() {}, destroy() {}};
   const localPreview=location.protocol==='http:'&&['localhost','127.0.0.1'].includes(location.hostname);
   const root = document.createElement('div'); root.id = 'flow-root'; document.body.append(root);
   let opened=false, busy=false, controller=null, returnFocus=null, destroyed=false, generation=0, resolving=null;
   let status=initialStatus,statusError='',statusFlight=null,policyTimer=null,pendingOpen=false;
   let current=newConversation(), conversations=[], historyOpen=false, historyLoading=false, historyError='', transitioning=false, deleted=null, draftTimer=null, historyRequest=0, historyMutation=0;
+  let pendingUploads=[],attachmentError='',attachmentPreview=null,selectionBusy=false;
+  const attachmentBusy=()=>selectionBusy||pendingUploads.some(row=>['reading','uploading'].includes(row.status));
   const historyChanges = new Map();
   const notifiedMutations = new Set();
   const listeners = new AbortController();
@@ -101,9 +114,45 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     if (!current.messages.length && opened) renderMessages();
   }
   function renderShell() {
-    root.innerHTML = `<aside id="flow-panel" class="flow-panel" aria-label="Flow 助手" role="dialog" ${opened?'':'hidden'}><header class="flow-header"><div class="flow-title">${FLOW_ICON}<h2>Flow</h2><span class="flow-preview-tag">${localPreview?'预览':'Beta'}</span></div><div class="flow-header-actions"><button type="button" class="icon-button" data-flow-action="new" aria-label="新对话" title="新对话">${glyph('plus')}</button><button type="button" class="icon-button" data-flow-action="close" aria-label="关闭 Flow" title="关闭">${glyph('close')}</button></div></header><div class="flow-context-row"><div class="flow-current-context">${glyph('chevron')}<span>${escape(contextLabel())}</span></div><span class="flow-status"><i></i><span>${escape(statusLabel())}</span></span></div><div class="flow-access-note" role="status" hidden></div><div class="flow-thread-bar"><span class="flow-thread-title"></span><button type="button" data-flow-action="history" aria-controls="flow-history" aria-expanded="${historyOpen}">${glyph('history')}<span>对话列表</span></button></div><section id="flow-history" class="flow-history" aria-label="对话列表" hidden></section><div class="flow-history-feedback" role="status" hidden></div><div class="flow-conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="与 Flow 的对话"></div><div class="flow-compose-area"><div class="flow-save-status" role="status"></div><div class="flow-compose-status" role="status"></div><form id="flow-compose" class="flow-compose"><label class="visually-hidden" for="flow-message">向 Flow 提问</label><textarea id="flow-message" name="message" rows="2" maxlength="4000" placeholder="问问 Flow…" enterkeyhint="send">${escape(current.draft)}</textarea><div class="flow-compose-bottom"><span>可查询 · 确认后操作</span><button type="submit" class="flow-send" aria-label="发送消息">${glyph('send')}</button></div></form><div class="flow-composer-hint">回答基于当前数据，请核对重要结果</div></div></aside>`;
-    renderAccess(); renderHistory(); renderMessages(); updateBusy(); renderSaveStatus();
+    root.innerHTML = `<aside id="flow-panel" class="flow-panel" aria-label="Flow 助手" role="dialog" ${opened?'':'hidden'}><header class="flow-header"><div class="flow-title">${FLOW_ICON}<h2>Flow</h2><span class="flow-preview-tag">${localPreview?'预览':'Beta'}</span></div><div class="flow-header-actions"><button type="button" class="icon-button" data-flow-action="new" aria-label="新对话" title="新对话">${glyph('plus')}</button><button type="button" class="icon-button" data-flow-action="close" aria-label="关闭 Flow" title="关闭">${glyph('close')}</button></div></header><div class="flow-context-row"><div class="flow-current-context">${glyph('chevron')}<span>${escape(contextLabel())}</span></div><span class="flow-status"><i></i><span>${escape(statusLabel())}</span></span></div><div class="flow-access-note" role="status" hidden></div><div class="flow-thread-bar"><span class="flow-thread-title"></span><button type="button" data-flow-action="history" aria-controls="flow-history" aria-expanded="${historyOpen}">${glyph('history')}<span>对话列表</span></button></div><section id="flow-history" class="flow-history" aria-label="对话列表" hidden></section><div class="flow-history-feedback" role="status" hidden></div><div class="flow-conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="与 Flow 的对话"></div><div class="flow-compose-area"><div class="flow-save-status" role="status"></div><div class="flow-compose-status" role="status"></div><div class="flow-attachment-preview" hidden></div><form id="flow-compose" class="flow-compose"><input type="file" id="flow-attachment-input" accept="${FLOW_ATTACHMENT_ACCEPT}" multiple hidden><div class="flow-draft-attachments" aria-label="待发送附件"></div><div class="flow-attachment-error" role="alert" hidden></div><label class="visually-hidden" for="flow-message">向 Flow 提问</label><textarea id="flow-message" name="message" rows="2" maxlength="4000" placeholder="问问 Flow…" enterkeyhint="send">${escape(current.draft)}</textarea><div class="flow-compose-bottom"><div class="flow-compose-tools"><button type="button" class="icon-button flow-attach-button" data-flow-action="attach" aria-label="上传附件" title="上传 PDF、表格或图片">${glyph('attach')}</button><span>可查询 · 确认后操作</span></div><button type="submit" class="flow-send" aria-label="发送消息">${glyph('send')}</button></div></form><div class="flow-composer-hint">回答基于当前数据，请核对重要结果</div></div></aside>`;
+    renderAccess(); renderHistory(); renderMessages(); renderAttachments(); updateBusy(); renderSaveStatus();
   }
+  function renderAttachments(){
+    const area=root.querySelector('.flow-draft-attachments');if(!area)return;
+    area.innerHTML=current.attachments.map(row=>`<div class="flow-attachment-chip"><button type="button" data-flow-action="view-attachment" data-flow-id="${escape(row.id)}">${glyph('attach')}<span>${escape(row.name)}</span><small>${row.pages} 页／表</small></button><button type="button" data-flow-action="remove-attachment" data-flow-id="${escape(row.id)}" aria-label="移除附件 ${escape(row.name)}">${glyph('close')}</button></div>`).join('')+pendingUploads.map(row=>`<div class="flow-attachment-chip ${row.status==='error'?'has-error':''}"><span>${glyph('attach')}${escape(row.file.name)}<small>${escape(row.error||row.progress||'正在读取…')}</small></span>${row.status==='error'?`<button type="button" data-flow-action="retry-attachment" data-flow-id="${row.id}">重试</button>`:''}<button type="button" data-flow-action="remove-attachment" data-flow-id="${row.id}" aria-label="移除附件 ${escape(row.file.name)}">${glyph('close')}</button></div>`).join('');
+    const error=root.querySelector('.flow-attachment-error');error.textContent=attachmentError;error.hidden=!attachmentError;renderAttachmentPreview();
+  }
+  function renderAttachmentPreview(){
+    const area=root.querySelector('.flow-attachment-preview');if(!area)return;area.hidden=!attachmentPreview;
+    if(!attachmentPreview){area.innerHTML='';return;}
+    area.innerHTML=`<header><strong>${escape(attachmentPreview.name||'附件内容')}</strong><button type="button" class="icon-button" data-flow-action="close-attachment" aria-label="关闭附件预览">${glyph('close')}</button></header><div class="flow-attachment-pages">${attachmentPreview.error?`<p role="alert">${escape(attachmentPreview.error)}</p>`:attachmentPreview.parts?attachmentPreview.parts.map(part=>`<section><h3>${escape(part.label)}</h3>${part.text?`<pre>${escape(part.text)}</pre>`:''}${/^\/api\/flow\/attachments\/[a-f0-9-]{36}\/parts\/\d+$/.test(part.imageUrl||'')?`<img src="${escape(part.imageUrl)}" alt="${escape(part.label)}">`:''}</section>`).join(''):'<p>正在读取…</p>'}</div>`;
+  }
+  async function showAttachment(id){
+    if(!attachmentId(id))return;const preview={id};attachmentPreview=preview;renderAttachmentPreview();
+    try{const result=await request('/attachments/'+id);if(attachmentPreview===preview){Object.assign(preview,{name:result.attachment.name,parts:result.parts});renderAttachmentPreview();}}
+    catch(error){if(attachmentPreview===preview){preview.error=error.message;renderAttachmentPreview();}}
+  }
+  async function processAttachment(row,conversation){
+    if(attachmentBusy()&&row.status==='error')return;row.status='reading';row.error='';row.controller=new AbortController();renderAttachments();updateBusy();
+    try{
+      if(!row.prepared){const prepare=prepareAttachment||(await import('./flow-attachment-reader.js')).prepareFlowAttachment;row.prepared=await prepare(row.file,{signal:row.controller.signal,onProgress:text=>{row.progress=text;if(current===conversation)renderAttachments();}});}
+      row.controller.signal.throwIfAborted();row.status='uploading';row.progress='正在保存附件…';renderAttachments();
+      const result=await request('/attachments',row.prepared);row.controller.signal.throwIfAborted();
+      if(current!==conversation||!pendingUploads.includes(row)||destroyed)return;
+      conversation.attachments.push(...cleanAttachmentRefs([result.attachment]));pendingUploads=pendingUploads.filter(item=>item!==row);touch(conversation);await saveConversation(conversation);
+    }catch(error){if(pendingUploads.includes(row)){row.status='error';row.error=/[\u3400-\u9fff]/.test(error.message||'')?error.message:'附件读取失败，请检查文件是否损坏，或另存为 PDF／xlsx 后重试。';}}
+    finally{if(!destroyed){renderAttachments();updateBusy();}}
+  }
+  async function selectAttachments(files){
+    if(busy||transitioning||resolving||!connected()||attachmentBusy())return;
+    const values=[...files];attachmentError='';if(values.length+current.attachments.length+pendingUploads.length>3){attachmentError='每条消息最多添加 3 个附件。';renderAttachments();return;}
+    const conversation=current;selectionBusy=true;
+    try{for(const file of values){if(destroyed||current!==conversation)break;const row={id:crypto.randomUUID(),file,status:'reading',progress:'正在读取…'};pendingUploads.push(row);await processAttachment(row,conversation);}}
+    finally{selectionBusy=false;if(!destroyed){renderAttachments();updateBusy();}}
+  }
+  root.addEventListener('change',event=>{if(event.target.id==='flow-attachment-input'){const files=[...event.target.files];event.target.value='';selectAttachments(files);}},{signal:listeners.signal});
+  root.addEventListener('dragover',event=>{if(event.dataTransfer?.types.includes('Files'))event.preventDefault();},{signal:listeners.signal});
+  root.addEventListener('drop',event=>{if(event.dataTransfer?.files.length){event.preventDefault();selectAttachments(event.dataTransfer.files);}},{signal:listeners.signal});
   function renderAccess() {
     const marker=root.querySelector('.flow-status');
     if(marker){marker.classList.toggle('is-connected',connected());marker.querySelector('span').textContent=statusLabel();}
@@ -121,7 +170,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     return `${active?`<div class="flow-generation" role="status"><div class="flow-generation-caption"><span>${escape(running?.label || (message.text?'正在生成回复':'正在准备…'))}</span>${running?.detail?`<small>${escape(running.detail)}</small>`:''}</div><div class="flow-generation-track" aria-hidden="true"><span></span></div></div>`:''}${trace.length?`<details class="flow-tool-trace"><summary>${glyph(message.error?'close':message.stopped?'stop':'check')}<span>${active?'工作过程':message.stopped?'已停止':message.error?'处理未完成':'工作过程'} · 已完成 ${steps.length?completed:trace.length} 步</span>${glyph('chevron')}</summary><ol>${trace.map(step=>`<li class="is-${escape(['running','done','error','stopped'].includes(step.status)?step.status:'done')}"><span class="flow-step-symbol">${stepIcon(step)}</span><div><span>${escape(step.label)}</span>${step.detail?`<small>${escape(step.detail)}</small>`:''}</div></li>`).join('')}</ol></details>`:''}`;
   }
   function renderMessage(message,index) {
-    if(message.role==='user')return `<article class="flow-message flow-message-user"><div class="flow-user-text">${escape(message.text)}</div></article>`;
+    if(message.role==='user')return `<article class="flow-message flow-message-user"><div class="flow-user-text">${escape(message.text)}</div>${(message.attachments||[]).map(row=>`<button type="button" class="flow-attachment-chip" data-flow-action="view-attachment" data-flow-id="${escape(row.id)}">${glyph('attach')}<span>${escape(row.name)}</span><small>${row.pages||1} 页／表</small></button>`).join('')}</article>`;
     const sources=message.sources||[], content=imagesFrom(message);
     return `<article class="flow-message flow-message-assistant" data-flow-message="${index}"><div class="flow-assistant-label">${FLOW_ICON}<strong>Flow</strong></div>${renderProgress(message,index)}<div class="flow-answer">${formatFlowText(content.text)}${content.images.map(renderImage).join('')}</div>${sources.length?`<div class="flow-sources" aria-label="数据来源">${sources.map(source=>{const href=safeFlowHref(source.href||source.url);return href?`<a href="${escape(href)}" class="flow-source-link">${escape(source.label||source.title||'查看记录')}${glyph('arrow')}</a>`:'';}).join('')}</div>`:''}${message.stopped?`<p class="flow-message-note">${message.mutations?.length?'已停止，已保存的操作仍然有效。':'已停止'}</p>`+ (index===current.messages.length-1?'<button type="button" class="text-button" data-flow-action="retry">继续核对</button>':''):''}${message.error?`<div class="flow-error" role="alert"><p>${escape(message.error)}</p>${index===current.messages.length-1?'<button type="button" class="text-button" data-flow-action="retry">重试</button>':''}</div>`:''}</article>`;
   }
@@ -140,7 +189,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
         const section=document.createElement('section');section.className='flow-proposals';section.setAttribute('aria-label','操作确认');
         section.innerHTML=(message.proposals||[]).filter(validProposal).map(row=>{
           const waiting=row.status==='pending',disabled=busy||transitioning||!!resolving||!entitled()||row.verifying;
-          return `<div class="flow-proposal" data-flow-proposal="${escape(row.id)}" tabindex="-1"><strong>${escape(row.label)} · ${escape(row.recordLabel)}</strong><dl>${(row.details||[]).map(field=>`<div><dt>${escape(field.label)}</dt><dd>${escape(field.value)}</dd></div>`).join('')}</dl><p>${escape(row.impact)}</p><small role="status">${({pending:row.verifying?'正在核对操作…':'尚未执行，请确认以上内容',saved:'已确认并保存',cancelled:'已取消，未执行',expired:'确认已过期，请重新发送请求'})[row.status]}</small>${waiting?`<div class="flow-proposal-actions"><button type="button" class="btn btn-primary" data-flow-action="confirm-operation" ${disabled?'disabled':''}>${resolving===row.id?'正在处理…':'确认'+(row.operation.includes('_delete_')?'删除':row.operation.includes('_create_')?'新增':row.operation.includes('_restore_')?'恢复':'修改')}</button><button type="button" class="btn btn-secondary" data-flow-action="cancel-operation" ${disabled?'disabled':''}>取消</button></div>`:''}${row.error?`<p class="flow-proposal-error" role="alert">${escape(row.error)}</p>`:''}</div>`;
+          return `<div class="flow-proposal ${row.operation==='flow_import_attachment_rows'?'flow-import-proposal':''}" data-flow-proposal="${escape(row.id)}" tabindex="-1"><strong>${escape(row.label)} · ${escape(row.recordLabel)}</strong><dl>${(row.details||[]).map(field=>`<div><dt>${escape(field.label)}</dt><dd>${escape(field.value)}</dd></div>`).join('')}</dl><p>${escape(row.impact)}</p><small role="status">${({pending:row.verifying?'正在核对操作…':'尚未执行，请确认以上内容',saved:'已确认并保存',cancelled:'已取消，未执行',expired:'确认已过期，请重新发送请求'})[row.status]}</small>${waiting?`<div class="flow-proposal-actions"><button type="button" class="btn btn-primary" data-flow-action="confirm-operation" ${disabled?'disabled':''}>${resolving===row.id?'正在处理…':'确认'+(row.operation.includes('_delete_')?'删除':row.operation.includes('_create_')?'新增':row.operation.includes('_restore_')?'恢复':'修改')}</button><button type="button" class="btn btn-secondary" data-flow-action="cancel-operation" ${disabled?'disabled':''}>取消</button></div>`:''}${row.error?`<p class="flow-proposal-error" role="alert">${escape(row.error)}</p>`:''}</div>`;
         }).join('');article.append(section);
       }
       const rows=(message.mutations||[]).filter(row=>validMutation(row));
@@ -177,10 +226,11 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
   }
   function updateBusy(label='') {
     const button=root.querySelector('.flow-send'); if(!button)return;
-    button.innerHTML=glyph(busy?'stop':'send'); button.setAttribute('aria-label',busy?'停止生成':'发送消息'); button.classList.toggle('is-stopping',busy); button.disabled=!!resolving||transitioning||(!busy&&(!current.draft.trim()||!connected()));
+    button.innerHTML=glyph(busy?'stop':'send'); button.setAttribute('aria-label',busy?'停止生成':'发送消息'); button.classList.toggle('is-stopping',busy); button.disabled=!!resolving||transitioning||attachmentBusy()||pendingUploads.length>0||(!busy&&(!(current.draft.trim()||current.attachments.length)||!connected()));
     root.querySelector('.flow-compose-status').textContent=busy?label||'Flow 正在处理…':'';
+    const attach=root.querySelector('[data-flow-action="attach"]');if(attach)attach.disabled=busy||transitioning||!!resolving||attachmentBusy()||!connected()||current.attachments.length+pendingUploads.length>=3;
     root.querySelector('.flow-conversation').setAttribute('aria-busy',String(busy));
-    root.querySelectorAll('[data-flow-action="new"],[data-flow-action="history"]').forEach(node=>{node.disabled=transitioning||!!resolving;});
+    root.querySelectorAll('[data-flow-action="new"],[data-flow-action="history"]').forEach(node=>{node.disabled=transitioning||!!resolving||attachmentBusy()||pendingUploads.length>0;});
   }
   async function refreshHistory() {
     const requestId=++historyRequest, startedAt=historyMutation; historyLoading=true; renderHistory();
@@ -197,11 +247,11 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     clearTimeout(draftTimer); draftTimer=null;
     const save=async()=>{
       if(destroyed||!entitled())return false;
-      if(!conversation.messages.length&&!conversation.draft.trim()&&!conversation.id)return true;
+      if(!conversation.messages.length&&!conversation.draft.trim()&&!conversation.attachments.length&&!conversation.id)return true;
       if(conversation.revision===conversation.savedRevision && conversation.id && !conversation.error)return true;
       conversation.saving=true;
       const revision=conversation.revision;
-      const body={messages:JSON.parse(JSON.stringify(conversation.messages)),draft:conversation.draft,...(conversation.id?{id:conversation.id,version:conversation.version}:{})};
+      const body={messages:JSON.parse(JSON.stringify(conversation.messages)),draft:conversation.draft,attachments:conversation.attachments,...(conversation.id?{id:conversation.id,version:conversation.version}:{})};
       try {
         const result=await request('/conversations',body);
         if(!result.conversation?.id)throw new Error('对话尚未保存，请重试。');
@@ -222,11 +272,11 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     updateBusy();renderMessages();
   }
   async function changeConversation(id=null) {
-    if(transitioning||resolving)return; transitioning=true; stopCurrent();updateBusy();
+    if(transitioning||resolving||attachmentBusy()||pendingUploads.length)return; transitioning=true; stopCurrent();updateBusy();
     if(!await saveConversation()){transitioning=false;updateBusy();return;}
     try {
       const next=id?newConversation((await request(`/conversations/${id}`)).conversation):newConversation();
-      current=next;historyOpen=false;historyError='';
+      current=next;pendingUploads=[];attachmentError='';attachmentPreview=null;renderAttachments();historyOpen=false;historyError='';
       for(const message of current.messages)for(const row of message.proposals||[])row.verifying=true;
       renderShell();await recoverProposals(current);root.querySelector('textarea')?.focus({preventScroll:true});
     } catch(error){historyError=error.message;renderHistory();}
@@ -386,15 +436,15 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       Promise.resolve().then(()=>onBusinessChange(mutation)).catch(()=>{});
     }
   }
-  async function send(text,retryId,priorMutations=[]) {
-    const prompt=String(text||'').trim();if(!prompt||busy||transitioning||resolving)return;
+  async function send(text,retryId,priorMutations=[],retryAttachments) {
+    const attached=cleanAttachmentRefs(retryAttachments||current.attachments);const prompt=String(text||'').trim()||(attached.length?'请识别附件，列出内容和需要核对的信息。':'' );if(!prompt||busy||transitioning||resolving||attachmentBusy()||pendingUploads.length)return;
     if(!connected()){renderAccess();return;}
     historyOpen=false;renderHistory();
     const conversation=current, requestGeneration=++generation;busy=true;controller=new AbortController();const signal=controller.signal;
     let chars=0;
-    const history=conversation.messages.filter(message=>!message.error&&message.text).slice(-12).reverse().filter(message=>{chars+=message.text.length;return chars<=24000;}).reverse().map(({role,text})=>({role,content:text}));
+    const history=conversation.messages.filter(message=>!message.error&&message.text).slice(-12).reverse().filter(message=>{chars+=message.text.length;return chars<=24000;}).reverse().map(({role,text,attachments})=>({role,content:text,...(attachments?.length?{attachments}:{})}));
     const requestId=retryId||crypto.randomUUID();
-    conversation.draft='';conversation.messages.push({role:'user',text:prompt,requestId});
+    conversation.draft='';conversation.attachments=[];renderAttachments();conversation.messages.push({role:'user',text:prompt,requestId,...(attached.length?{attachments:attached}:{})});
     const answer={role:'assistant',text:'',tools:[],sources:[],images:[],steps:[],mutations:priorMutations.filter(validMutation),pending:true};conversation.messages.push(answer);touch(conversation);
     const textarea=root.querySelector('textarea');if(textarea){textarea.value='';textarea.style.height='';}
     updateBusy();renderMessages();
@@ -402,7 +452,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       if(!await saveConversation(conversation)){answer.error='对话尚未保存，操作尚未执行。请重试。';return;}
       if(generation!==requestGeneration)return;
       if(signal.aborted){answer.stopped=true;return;}
-      const result=await sendStream({message:prompt,requestId,history,context:getContext(),...(conversation.id?{conversationId:conversation.id}:{})},signal,event=>{if(generation===requestGeneration&&current===conversation)onEvent(event,answer,conversation);});
+      const result=await sendStream({message:prompt,requestId,history,...(attached.length?{attachments:attached}:{}),context:getContext(),...(conversation.id?{conversationId:conversation.id}:{})},signal,event=>{if(generation===requestGeneration&&current===conversation)onEvent(event,answer,conversation);});
       if(generation!==requestGeneration)return;
       if(result)onEvent({type:'done',...result},answer,conversation);
       if(!answer.text&&!answer.images.length&&!answer.mutations.length&&!answer.proposals?.length)answer.error='没有收到回答，请重试。';
@@ -414,6 +464,11 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     if(button.dataset.flowPrompt){await send(button.dataset.flowPrompt);return;}
     const action=button.dataset.flowAction;
     if(action==='confirm-operation'||action==='cancel-operation'){await resolveProposal(button,action==='confirm-operation'?'confirm':'cancel');return;}
+    if(action==='attach'){root.querySelector('#flow-attachment-input').click();return;}
+    if(action==='remove-attachment'){const id=button.dataset.flowId;const pending=pendingUploads.find(row=>row.id===id);pending?.controller?.abort();pendingUploads=pendingUploads.filter(row=>row.id!==id);current.attachments=current.attachments.filter(row=>row.id!==id);touch();renderAttachments();updateBusy();await saveConversation();return;}
+    if(action==='retry-attachment'){const row=pendingUploads.find(row=>row.id===button.dataset.flowId);if(row)await processAttachment(row,current);return;}
+    if(action==='view-attachment'){await showAttachment(button.dataset.flowId);return;}
+    if(action==='close-attachment'){attachmentPreview=null;renderAttachmentPreview();return;}
     if(action==='open')open(); if(action==='close')close();
     if(action==='history'){historyOpen=!historyOpen;if(historyOpen){if(!await saveConversation()){historyError=current.error;renderHistory();return;}await refreshHistory();}renderHistory();}
     if(action==='new')await changeConversation();
@@ -428,7 +483,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       if(!connected()){renderAccess();return;}
       const lastUser=current.messages.findLast(message=>message.role==='user');if(!lastUser)return;
       const priorMutations=current.messages.at(-1)?.mutations||[];
-      current.messages=current.messages.slice(0,-2);touch();await send(lastUser.text,lastUser.requestId,priorMutations);
+      current.messages=current.messages.slice(0,-2);touch();await send(lastUser.text,lastUser.requestId,priorMutations,lastUser.attachments||[]);
     }
     if(action==='refresh-status')await refreshStatus();
   },{signal:listeners.signal});
@@ -455,5 +510,5 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
   policyTimer=setInterval(()=>{if(!document.hidden)refreshStatus();},15000);
   window.addEventListener('focus',()=>refreshStatus(),{signal:listeners.signal});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshStatus();},{signal:listeners.signal});
-  return {launcher,sync,open,close,refreshStatus,destroy(){destroyed=true;generation++;controller?.abort();listeners.abort();clearInterval(policyTimer);clearTimeout(draftTimer);root.remove();document.body.classList.remove('flow-is-open');}};
+  return {launcher,sync,open,close,refreshStatus,destroy(){destroyed=true;generation++;controller?.abort();listeners.abort();for(const row of pendingUploads)row.controller?.abort();clearInterval(policyTimer);clearTimeout(draftTimer);root.remove();document.body.classList.remove('flow-is-open');}};
 }

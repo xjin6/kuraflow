@@ -1,3 +1,5 @@
+import {createAttachmentStore,attachmentContext} from './flow-attachments.js';
+import {cleanAttachmentRefs} from '../flow-attachment-data.js';
 import {getIdentity} from './accounts.js';
 import {createFlowDataContext, flowToolDefinitions, runFlowTool} from './flow-tools.js';
 import {buildFlowSystemPrompt} from './flow-prompt.js';
@@ -61,7 +63,7 @@ function safeHistory(history) {
   return history.slice(-12).map(item=>{
     if(!item||!['user','assistant'].includes(item.role)||typeof item.content!=='string'||item.content.length>16000)fail('对话格式不正确。');
     total+=item.content.length;if(total>24000)fail('对话过长，请新建对话。');
-    return {role:item.role,content:item.content};
+    return {role:item.role,content:item.content,...(item.role==='user'&&item.attachments?{attachments:cleanAttachmentRefs(item.attachments)}:{})};
   });
 }
 function safeContext(context) {
@@ -111,6 +113,17 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
       return json(managementStatus(policy,connection));
     }
     assertEnabled(policy);
+    const attachmentStore=createAttachmentStore(env);
+    const attachmentRoute=/^\/api\/flow\/attachments\/([a-f0-9-]{36})(?:\/parts\/(\d+))?$/.exec(url.pathname);
+    if(request.method==='POST'&&url.pathname==='/api/flow/attachments') {
+      const body=await readBody(request,1600000),attachment=await attachmentStore.put(principal,body);
+      assertEnabled(await getPolicy(env,principal.tenantId));return json({attachment});
+    }
+    if(request.method==='GET'&&attachmentRoute){
+      const record=await attachmentStore.get(principal,attachmentRoute[1]);
+      if(attachmentRoute[2]!==undefined){const image=record.parts[Number(attachmentRoute[2])]?.image;if(!image)fail('未找到附件图片。',404);return new Response(Uint8Array.from(atob(image.data),c=>c.charCodeAt(0)),{headers:{...securityHeaders,'Content-Type':image.mimeType,'Content-Security-Policy':"default-src 'none'; sandbox"}});}
+      return json({attachment:{id:record.id,name:record.name,kind:record.kind,pages:record.pages},parts:record.parts.map((part,i)=>({label:part.label,text:part.text,...(part.image?{imageUrl:'/api/flow/attachments/'+record.id+'/parts/'+i}:{})}))});
+    }
     const actionRoute=/^\/api\/flow\/actions\/([a-f0-9-]{36})(?:\/(confirm|cancel))?$/.exec(url.pathname);
     if(actionRoute) {
       if(!FLOW_REQUEST_ID.test(actionRoute[1])||(actionRoute[2]?request.method!=='POST':request.method!=='GET'))fail('接口不存在。',404);
@@ -140,13 +153,16 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     if(request.method==='GET'&&artifact)return new Response(await store.getArtifact(principal,artifact[1]),{headers:{...securityHeaders,'Content-Type':'image/svg+xml; charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'none'; sandbox"}});
     if(request.method!=='POST')fail('接口不存在。',404);
     const body=await readBody(request,url.pathname==='/api/flow/conversations'?640000:64000);
-    if(url.pathname==='/api/flow/conversations')return json({conversation:await store.save(principal,body)});
+    if(url.pathname==='/api/flow/conversations')return json({conversation:await store.save(principal,await attachmentStore.conversation(principal,body))});
     if(conversation?.[2]==='delete')return json(await store.remove(principal,conversation[1]));
     if(conversation?.[2]==='restore')return json({conversation:await store.restore(principal,conversation[1])});
     if(url.pathname!=='/api/flow/chat')fail('接口不存在。',404);
     if(typeof body.message!=='string'||!body.message.trim()||body.message.length>4000)fail('请输入 1～4000 字的问题。');
     if(body.requestId!=null&&(typeof body.requestId!=='string'||!FLOW_REQUEST_ID.test(body.requestId)))fail('请求编号不正确，请刷新页面。');
     const history=safeHistory(body.history),context=safeContext(body.context);
+    const explicit=cleanAttachmentRefs(body.attachments||[]),refs=explicit.length?explicit:history.findLast(row=>row.role==='user'&&row.attachments?.length)?.attachments||[];
+    const attachmentRecords=await Promise.all(refs.map(ref=>attachmentStore.get(principal,ref.id)));
+    const attachments=attachmentContext(attachmentRecords);
     const startedAt=Date.now(),scope=JSON.stringify(['flow-chat',principal.tenantId,principal.userId]),owner=crypto.randomUUID();
     if(!await store.acquireLease(scope,owner,CHAT_BUDGET_MS))fail('Flow 正在处理上一条问题，请稍等或先停止。',409);
     pendingLease={scope,owner};
@@ -160,7 +176,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     request.signal.throwIfAborted();
     const remainingBudget=CHAT_BUDGET_MS-(Date.now()-startedAt);
     if(remainingBudget<=0)fail('本次查询超时，请重试。',504);
-    const response=chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message:body.message.trim(),requestId:body.requestId,scope,owner,remainingBudget});
+    const response=chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,attachments,attachmentRecords,message:body.message.trim(),requestId:body.requestId,scope,owner,remainingBudget});
     pendingLease=null;return response;
   } catch(error) {
     if(pendingLease)try{await store.releaseLease(pendingLease.scope,pendingLease.owner);}catch{}
@@ -175,7 +191,7 @@ function abortable(promise,signal) {
     Promise.resolve(promise).then(value=>{signal.removeEventListener('abort',abort);resolve(value);},error=>{signal.removeEventListener('abort',abort);reject(error);});
   });
 }
-function chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message,requestId,scope,owner,remainingBudget}) {
+function chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,attachments,attachmentRecords,message,requestId,scope,owner,remainingBudget}) {
   const controller=new AbortController(),signal=controller.signal;
   const cancel=()=>controller.abort(request.signal.reason);
   request.signal.addEventListener('abort',cancel,{once:true});
@@ -232,7 +248,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
           const businessDB=env.DB.withSession?env.DB.withSession('first-primary'):env.DB;
           const data=await abortable(loadData(businessDB,principal),signal),sources=new Map(),images=new Map();let toolsUsed=0;
           const mutations=new Map(),proposals=new Map();
-          const actions=requestId?createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data,readPolicy:()=>getPolicy(env,principal.tenantId),checkAccess:()=>checkAccess(true),onMutation:mutation=>{mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});},onProposal:proposal=>{proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}}):null;
+          const actions=requestId?createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data,attachmentRecords,readPolicy:()=>getPolicy(env,principal.tenantId),checkAccess:()=>checkAccess(true),onMutation:mutation=>{mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});},onProposal:proposal=>{proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}}):null;
           const completedActions=actions?await actions.receipts():[];
           for(const mutation of completedActions){mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});}
           for(const proposal of actions?await actions.proposals():[]){proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}
@@ -267,7 +283,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
           // Serialize model tools so a subsequent query sees earlier writes,
           // including SDKs that request multiple tool calls concurrently.
           const execute=(name,args)=>{const pending=toolQueue.then(()=>executeTool(name,args));toolQueue=pending.catch(()=>{});return pending;};
-          await abortable(provider.chat({principal,message,history,model,systemPrompt:buildFlowSystemPrompt({index:data.index,context,writesEnabled:!!actions,completedActions,preparedActions:[...proposals.values()]}),toolDefinitions:[...flowToolDefinitions,FLOW_ADDRESS_TOOL,...(actions?FLOW_WRITE_TOOLS:[]),flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
+          await abortable(provider.chat({principal,message,history:history.map(({role,content})=>({role,content})),attachments,model,systemPrompt:buildFlowSystemPrompt({index:data.index,context,writesEnabled:!!actions,completedActions,preparedActions:[...proposals.values()],attachmentNames:attachmentRecords.map(r=>({id:r.id,name:r.name,locations:r.parts.map(p=>p.label)}))}),toolDefinitions:[...flowToolDefinitions,FLOW_ADDRESS_TOOL,...(actions?FLOW_WRITE_TOOLS.filter(tool=>tool.name!=='flow_import_attachment_rows'||attachmentRecords.length):[]),flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
           await toolQueue;await eventQueue;await checkAccess(true);emit({type:'sources',sources:[...sources.values()].slice(0,20)});finishSteps('done');emit({type:'done',model,images:[...images.values()],mutations:[...mutations.values()],proposals:[...proposals.values()],steps:[...steps.values()]});
         } catch(error) {
           if(!signal.aborted){finishSteps('error');emit({type:'error',message:cleanError(error)});}

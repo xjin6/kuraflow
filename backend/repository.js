@@ -9,6 +9,7 @@ const MAX_STORES = 200;
 const MAX_DOCUMENTS = 1000;
 const MAX_HISTORY = 200;
 const COMMANDS = new Set([
+  'applyAttachmentRows',
   'setWarehouseStock', 'setStoreAllocation', 'setStoreUnitAllocation',
   'setPrice', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setWarehouseUnitStock', 'addProduct', 'deleteProduct', 'restoreProduct', 'addStore', 'updateStore', 'deleteStore',
   'submitOrder', 'setStage', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'remindOrder', 'recordIssue', 'resolveOrderIssue', 'confirmDelivery', 'setStock', 'importProducts',
@@ -259,6 +260,17 @@ function validateCommand(principal, command) {
   if (!Array.isArray(command.args) || command.args.length > 6) reject('操作参数不正确。');
   identifier(command.idempotencyKey, '请求编号');
   if (principal.role === 'store' && !STORE_COMMANDS.has(command.type)) reject('门店账号不能执行这项管理操作。', 403, 'FORBIDDEN');
+  if(command.type==='applyAttachmentRows') {
+    const rows=command.args[0];
+    if(command.args.length!==1||!Array.isArray(rows)||!rows.length||rows.length>20)reject('每批可导入 1～20 行。');
+    const seen=new Set();
+    for(const row of rows){
+      plainObject(row,'导入行');if(!['setUnitQuote','setWarehouseUnitStock'].includes(row.type)||Object.keys(row).some(k=>!['type','args'].includes(k)))reject('导入仅支持销售报价与实物总库存。');
+      validateCommand(principal,{...row,idempotencyKey:command.idempotencyKey});
+      const key=JSON.stringify([row.type,...row.args.slice(0,row.type==='setUnitQuote'?3:1)]);
+      if(seen.has(key))reject('同一商品的库存或同一门店商品单位的报价不能在一批中重复。');seen.add(key);
+    }
+  }
   if (command.type === 'addManualTask') {
     if (command.args.length !== 1) reject('待办操作参数不正确。');
     plainObject(command.args[0], '待办内容');
@@ -393,6 +405,16 @@ function assertExpectedQuotes(model, args, expectedQuotes) {
 
 function applyCommand(model, principal, command) {
   const args = clone(command.args);
+  if(command.type==='applyAttachmentRows') {
+    const rows=args[0].map(row=>{
+      const quote=row.type==='setUnitQuote',productId=row.args[quote?1:0],unit=row.args[quote?2:1],product=model.getProduct(productId);
+      if(!product||product.deletedAt)reject('导入商品不存在或已删除。',404);
+      const before=quote?model.getUnitQuote(row.args[0],productId,unit):model.getWarehouseUnitStock(productId,unit);
+      const after=applyCommand(model,principal,row);
+      return {productId,productName:product.name,spec:product.spec,unit,kind:quote?'quote':'stock',storeName:quote?model.getStore(row.args[0])?.name:null,before:quote?before.price:before,after:quote?row.args[3]:row.args[2],...(quote?{taxBasis:row.args[4],taxRate:row.args[5]??null}:{})};
+    });
+    return {name:`${rows.length} 项报价／库存更新`,rows};
+  }
   if (['addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask'].includes(command.type)) {
     // Source and authorship are assigned by the command handler, never by a
     // submitted field or by whether an upstream packing note was typed by hand.

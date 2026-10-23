@@ -618,3 +618,24 @@ test('stopping generation removes the animated bar and marks unfinished public s
   pending.options.onEvent({type:'delta',text:'stale-answer'});pending.resolve();await nextTurn();
   assert.doesNotMatch(document.querySelector('#flow-root').textContent,/stale-answer/);
 });
+
+test('attachment upload persists before sending, keeps source chips in history, and retries the same attachment and request',async t=>{
+  const id='11111111-1111-4111-8111-111111111111',attachment={id,name:'报价 <script>.pdf',kind:'pdf',pages:1};let finishRead,attempts=0;const payloads=[];
+  const {window,document,service,requests}=fixture(t,{prepareAttachment:()=>new Promise(resolve=>finishRead=resolve),request:async(path,body)=>{
+    if(path==='/attachments')return {attachment};
+    if(path==='/attachments/'+id)return {attachment,parts:[{label:'第 1 页',text:'<script>not executable</script> 单价 1200'}]};
+    return {enabled:true,available:true,model:'test-model'};
+  },send:async payload=>{payloads.push(payload);if(++attempts===1)throw Error('临时网络中断');return {text:'已识别，待核对。'};}});
+  click(document,'open');const input=document.querySelector('#flow-attachment-input');Object.defineProperty(input,'files',{value:[new window.File(['test'],'报价单.pdf',{type:'application/pdf'})],configurable:true});input.dispatchEvent(new window.Event('change',{bubbles:true}));
+  await settle(()=>finishRead);assert.equal(document.querySelector('.flow-send').disabled,true);
+  finishRead({id,name:attachment.name,kind:'pdf',bytes:4,parts:[{label:'第 1 页',text:'单价 1200'}]});
+  await settle(()=>document.querySelector('[data-flow-action="view-attachment"]'));
+  await settle(()=>[...service.rows.values()].some(row=>row.attachments?.[0]?.id===id));
+  assert.equal(document.querySelector('.flow-draft-attachments script'),null);write(window,'更新销售报价，先给我核对');submit(window);
+  await settle(()=>document.querySelector('[data-flow-action="retry"]'));assert.equal(payloads[0].attachments[0].id,id);assert.equal(payloads[0].attachments[0].parts,undefined);
+  click(document,'retry');await settle(()=>payloads.length===2&&document.querySelector('.flow-answer').textContent.includes('已识别'));
+  assert.equal(payloads[1].requestId,payloads[0].requestId);assert.deepEqual(payloads[1].attachments,payloads[0].attachments);
+  assert.ok(document.querySelector('.flow-message-user [data-flow-action="view-attachment"]'));
+  click(document,'view-attachment');await settle(()=>document.querySelector('.flow-attachment-pages pre'));assert.equal(document.querySelector('.flow-attachment-pages script'),null);assert.match(document.querySelector('.flow-attachment-pages pre').textContent,/not executable/);
+  assert.equal(requests.filter(row=>row.path==='/attachments').length,1);
+});

@@ -13,7 +13,7 @@ const runtime=new Miniflare(convertV4MiniflareOptions({workers:[{name:'kuraflow-
  const url=new URL(request.url), relative=decodeURIComponent(url.pathname).replace(/^\//,'')||'index.html';
  const file=path.resolve(root,'dist-cloud',relative);
  if(!file.startsWith(path.join(root,'dist-cloud')+path.sep))return new Response('Not found',{status:404});
- try{const data=await fs.readFile(file);return new Response(data,{headers:{'Content-Type':({'.html':'text/html','.css':'text/css','.js':'text/javascript','.jpg':'image/jpeg','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream'}});}catch{return new Response('Not found',{status:404});}
+ try{const data=await fs.readFile(file);return new Response(data,{headers:{'Content-Type':({'.mjs':'text/javascript','.html':'text/html','.css':'text/css','.js':'text/javascript','.jpg':'image/jpeg','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream'}});}catch{return new Response('Not found',{status:404});}
 }}}]}));
 const db=await runtime.getD1Database('DB');
 for(const file of (await fs.readdir(path.join(root,'backend/migrations'))).filter(x=>x.endsWith('.sql')).sort())await db.exec((await fs.readFile(path.join(root,'backend/migrations',file),'utf8')).replace(/--[^\n]*/g,'').replace(/\s+/g,' '));

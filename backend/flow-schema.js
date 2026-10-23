@@ -15,6 +15,9 @@ export function validateFlowArguments(schema, value, label = '操作参数') {
       if (!Object.hasOwn(schema.properties,key) || ['__proto__','constructor','prototype'].includes(key)) fail('操作包含不支持的字段。');
       validateFlowArguments(schema.properties[key],value[key],schema.properties[key].description || key);
     }
+  } else if (schema.type === 'array') {
+    if(!Array.isArray(value)||schema.minItems!=null&&value.length<schema.minItems||schema.maxItems!=null&&value.length>schema.maxItems)fail(`${label}数量不正确。`);
+    for(const item of value)validateFlowArguments(schema.items,item,label);
   } else if (schema.type === 'string') {
     if (typeof value !== 'string' || schema.maxLength != null && value.length > schema.maxLength || schema.minLength != null && value.trim().length < schema.minLength) fail(`${label}请填写有效文字。`);
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) fail(`${label}格式不正确。`);

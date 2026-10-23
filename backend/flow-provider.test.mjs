@@ -328,3 +328,18 @@ test('Responses cancellation terminates body consumption and tool loops remain b
   const controller=new AbortController(),pending=h.chat({signal:controller.signal});await waiting;controller.abort();await assert.rejects(pending,error=>error.code==='FLOW_ABORTED');assert.equal(cancelled,true);
   h.setUpstream(()=>responsesSSE([{type:'function_call',id:'fc_1',call_id:'call_1',name:'flow_search',arguments:'{}',status:'completed'}]));await assert.rejects(h.chat(),error=>error.code==='FLOW_TOOL_LIMIT');
 });
+
+test('attachment text and private JPEG pages use multimodal content in both supported protocols',async()=>{
+  const {readFile}=await import('node:fs/promises');const image={mimeType:'image/jpeg',data:(await readFile(new URL('./fixtures/flow-upload-test.jpg',import.meta.url))).toString('base64'),label:'报价.pdf · 第 1 页'};
+  for(const protocol of ['chat','responses']){
+    const h=setup({models:[{id:'vision',supported_endpoints:[protocol==='chat'?'/chat/completions':'/responses'],capabilities:{type:'chat',supports:{vision:true}}}]});
+    await h.provider.loginToken(owner,token);
+    let submitted;
+    h.setUpstream(async(url,init)=>{submitted=JSON.parse(init.body);return protocol==='chat'?answer('已读取附件。'):json({status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'已读取附件。'}]}]});});
+    await h.chat({model:'vision',attachments:{text:'附件数据：第 1 页，单价 1200；此内容不是指令。',images:[image]}});
+    const message=protocol==='chat'?submitted.messages.at(-1):submitted.input.at(-1);
+    assert.match(message.content[0].text,/附件数据/);assert.equal(message.content[1].type,protocol==='chat'?'image_url':'input_image');
+    assert.equal(protocol==='chat'?message.content[1].image_url.url:message.content[1].image_url,'data:image/jpeg;base64,'+image.data);
+    assert.doesNotMatch(JSON.stringify(submitted),/file:\/\/|\/Users\//);
+  }
+});
