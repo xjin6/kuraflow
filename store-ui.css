@@ -24,7 +24,7 @@
 .store-code-copy-icon .icon svg { width:15px; height:15px; }
 .store-code-control .store-code-value { font-size:12px; letter-spacing:0; }
 .store-code-copy-icon:hover { color:var(--ui-accent); background:var(--ui-hover); }
-.store-card { container:store-card / inline-size; }
+.store-card { container:store-card / inline-size; min-height:300px; }
 @container store-card (max-width:305px) {
   .store-card .store-card-info > .store-code-row { grid-template-columns:1fr; gap:2px; }
 }

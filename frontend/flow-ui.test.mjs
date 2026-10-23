@@ -44,8 +44,151 @@ function fixture(t,options = {}) {
 }
 const click = (document,action) => document.querySelector(`[data-flow-action="${action}"]`).click();
 const write = (window,text) => {const input=window.document.querySelector('#flow-message');input.value=text;input.dispatchEvent(new window.Event('input',{bubbles:true}));};
+const savedMutation=(requestId,extra={})=>({id:`flow:${requestId}:flow_create_store:${'a'.repeat(64)}`,operation:'flow_create_store',label:'新增门店',recordId:'s-test',recordLabel:'测试门店',href:'/?page=stores&store=s-test',revision:1,status:'saved',...extra});
 const submit = window => window.document.querySelector('#flow-compose').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));
 async function settle(predicate) { for(let i=0;i<100;i++){if(predicate())return;await nextTurn();}assert.fail('UI did not reach the expected state'); }
+
+const preparedProposal=requestId=>({id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',requestId,operation:'flow_delete_store',label:'删除门店',recordLabel:'<script>测试店</script>',status:'pending',details:[{label:'门店',value:'测试门店'},{label:'地址',value:'大阪市浪速区難波中1丁目2番3号'}],impact:'已有订单和单据保留。'});
+test('operation cards appear after the answer, remain disabled during generation, and only a human click submits confirmation',async t=>{
+  let pending,proposal,releaseConfirm,sent=0;const changes=[];
+  const {window,document,requests,service}=fixture(t,{onBusinessChange:row=>changes.push(row),send:(payload,options)=>{sent++;proposal=preparedProposal(payload.requestId);return new Promise(resolve=>{pending={options,resolve};});},request:async(path,body)=>{
+    if(path.endsWith('/confirm')){assert.deepEqual(Object.keys(body),[]);await new Promise(resolve=>releaseConfirm=resolve);return {proposal:{...proposal,status:'saved'},mutations:[savedMutation(proposal.requestId,{operation:'flow_delete_store',label:'删除门店'})]};}
+    return {enabled:true,available:true,model:'test-model'};
+  }});
+  click(document,'open');write(window,'删除测试门店');submit(window);await settle(()=>pending);
+  pending.options.onEvent({type:'proposal',proposal});pending.options.onEvent({type:'delta',text:'请确认是否删除。'});
+  assert.equal(document.querySelector('[data-flow-action="confirm-operation"]').disabled,true);
+  assert.equal(document.querySelector('.flow-proposal script'),null);assert.equal(changes.length,0);
+  assert.equal(document.querySelector('.flow-message-assistant').lastElementChild.className,'flow-proposals');
+  assert.equal(requests.filter(row=>row.path.includes('/actions/')).length,0);
+  pending.resolve();await settle(()=>!document.querySelector('[data-flow-action="confirm-operation"]').disabled);
+  const button=document.querySelector('[data-flow-action="confirm-operation"]');button.focus();button.click();
+  await settle(()=>releaseConfirm);click(document,'confirm-operation');assert.equal(requests.filter(row=>row.path.endsWith('/confirm')).length,1);
+  assert.equal(document.querySelector('[data-flow-action="cancel-operation"]').disabled,true);
+  releaseConfirm();await settle(()=>document.querySelector('.flow-mutation'));
+  assert.equal(document.querySelector('[data-flow-action="confirm-operation"]'),null);
+  assert.match(document.querySelector('.flow-proposal').textContent,/已确认并保存/);assert.equal(sent,1);assert.equal(changes.length,1);
+  await settle(()=>[...service.rows.values()][0]?.messages.at(-1)?.proposals?.[0]?.status==='saved');
+});
+
+test('cancelling a prepared operation leaves no saved receipt or business refresh',async t=>{
+  let proposal;const changes=[];
+  const {window,document}=fixture(t,{onBusinessChange:row=>changes.push(row),send:async payload=>{proposal=preparedProposal(payload.requestId);return {text:'请确认',proposals:[proposal]};},request:async path=>path.endsWith('/cancel')?{proposal:{...proposal,status:'cancelled'},mutations:[]}:{enabled:true,available:true}});
+  click(document,'open');write(window,'删除门店');submit(window);
+  await settle(()=>document.querySelector('[data-flow-action="cancel-operation"]')?.disabled===false);click(document,'cancel-operation');
+  await settle(()=>document.querySelector('.flow-proposal')?.textContent.includes('已取消'));
+  assert.equal(document.querySelector('.flow-mutation'),null);assert.equal(changes.length,0);
+});
+
+test('lost confirmation responses recover saved receipts without asking the model to repeat the operation',async t=>{
+  let proposal,confirmCount=0;const changes=[];
+  const {window,document}=fixture(t,{onBusinessChange:row=>changes.push(row),send:async payload=>{proposal=preparedProposal(payload.requestId);return {text:'请确认',proposals:[proposal]};},request:async path=>{
+    if(path.endsWith('/confirm')){confirmCount++;throw new Error('连接中断');}
+    if(path.startsWith('/actions/'))return {proposals:[{...proposal,status:'saved'}],mutations:[savedMutation(proposal.requestId)]};
+    return {enabled:true,available:true};
+  }});
+  click(document,'open');write(window,'删除门店');submit(window);await settle(()=>document.querySelector('[data-flow-action="confirm-operation"]')?.disabled===false);click(document,'confirm-operation');
+  await settle(()=>document.querySelector('.flow-mutation'));assert.equal(confirmCount,1);assert.equal(changes.length,1);assert.equal(document.querySelector('[data-flow-action="confirm-operation"]'),null);
+});
+
+test('reopening replaces archived card contents and status with the authoritative server proposal',async t=>{
+  const requestId=crypto.randomUUID(),proposal=preparedProposal(requestId),service=conversationService([{id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',version:1,title:'待确认',messages:[{role:'user',text:'删除门店',requestId},{role:'assistant',text:'请确认',proposals:[{...proposal,recordLabel:'过期的本地内容'}]}],draft:''}]);
+  const {document}=fixture(t,{conversations:service,request:async path=>path.startsWith('/actions/')?{proposals:[{...proposal,recordLabel:'最新核对的门店',status:'cancelled'}],mutations:[]}:{enabled:true,available:true}});
+  click(document,'open');click(document,'history');await settle(()=>document.querySelector('.flow-history-select'));document.querySelector('.flow-history-select').click();
+  await settle(()=>document.querySelector('.flow-proposal')?.textContent.includes('最新核对的门店'));
+  assert.doesNotMatch(document.querySelector('.flow-proposal').textContent,/过期的本地内容/);assert.equal(document.querySelector('[data-flow-action="confirm-operation"]'),null);
+});
+
+test('a stale confirmation shows the conflict and retains a cancellable card',async t=>{
+  let proposal;
+  const {window,document}=fixture(t,{send:async payload=>{proposal=preparedProposal(payload.requestId);return {text:'请确认',proposals:[proposal]};},request:async path=>{
+    if(path.endsWith('/confirm'))throw new Error('业务资料已更新，请重新发送请求。');
+    if(path.startsWith('/actions/'))return {proposals:[proposal],mutations:[]};return {enabled:true,available:true};
+  }});
+  click(document,'open');write(window,'删除门店');submit(window);await settle(()=>document.querySelector('[data-flow-action="confirm-operation"]')?.disabled===false);click(document,'confirm-operation');
+  await settle(()=>document.querySelector('.flow-proposal-error'));assert.match(document.querySelector('.flow-proposal-error').textContent,/业务资料已更新/);assert.equal(document.querySelector('[data-flow-action="cancel-operation"]').disabled,false);
+});
+
+test('saved write receipts survive a failed answer, retry reuses its request ID, and sources stay safe',async t=>{
+  const calls=[],changes=[],service=conversationService();let fail=true;
+  const {window,document}=fixture(t,{conversations:service,onBusinessChange:row=>changes.push(row),send:async(payload,{onEvent})=>{
+    calls.push(payload);
+    const mutation=savedMutation(payload.requestId,{recordLabel:'<img src=x onerror=alert(1)>测试门店'});
+    onEvent({type:'mutation',mutation});
+    onEvent({type:'mutation',mutation:{...mutation,id:'bad',href:'javascript:alert(1)'}});
+    if(fail)throw new Error('回答连接中断');
+    onEvent({type:'done',text:'已核对原操作',mutations:[{...mutation,replayed:true}]});
+  }});
+  click(document,'open');write(window,'请新增门店');submit(window);
+  await settle(()=>document.querySelector('[data-flow-action="retry"]'));
+  assert.equal(document.querySelectorAll('.flow-mutation').length,1);
+  assert.equal(document.querySelector('.flow-mutation img'),null);
+  assert.match(document.querySelector('.flow-mutation').textContent,/已保存/);
+  assert.equal(changes.length,1);
+  fail=false;click(document,'retry');
+  await settle(()=>calls.length===2&&document.querySelector('.flow-conversation').getAttribute('aria-busy')==='false');
+  assert.equal(calls[0].requestId,calls[1].requestId);
+  assert.equal(document.querySelectorAll('.flow-mutation').length,1);
+  assert.equal(changes.length,1);
+  await settle(()=>[...service.rows.values()][0]?.messages.at(-1)?.text==='已核对原操作');
+  const stored=[...service.rows.values()][0];
+  assert.equal(stored.messages[0].requestId,calls[0].requestId);
+  assert.equal(stored.messages[1].mutations[0].recordId,'s-test');
+});
+
+test('a stopped write keeps its receipt and can be resumed without making a fresh operation ID',async t=>{
+  let pending;const requests=[];
+  const {window,document}=fixture(t,{send:async(payload,options)=>{
+    requests.push(payload);
+    options.onEvent({type:'mutation',mutation:savedMutation(payload.requestId)});
+    if(requests.length>1)return {text:'已核对保存结果'};
+    pending=options;
+    await new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new window.DOMException('Aborted','AbortError')),{once:true}));
+  }});
+  click(document,'open');write(window,'新增门店');submit(window);await settle(()=>pending);
+  document.querySelector('.flow-send').click();
+  await settle(()=>document.querySelector('.flow-message-note'));
+  assert.match(document.querySelector('.flow-message-note').textContent,/已保存的操作仍然有效/);
+  click(document,'retry');await settle(()=>requests.length===2);
+  assert.equal(requests[0].requestId,requests[1].requestId);
+  assert.equal(document.querySelectorAll('.flow-mutation').length,1);
+});
+
+test('reopening a saved conversation retains completed write receipts without triggering another mutation',async t=>{
+  const id='00000000-0000-4000-8000-000000000001',requestId='00000000-0000-4000-8000-000000000002';
+  const service=conversationService([{id,version:1,title:'历史操作',updatedAt:'2026-10-22',messages:[{role:'user',text:'新增门店',requestId},{role:'assistant',text:'已保存',mutations:[savedMutation(requestId)]}],draft:''}]);
+  let writes=0,refreshes=0;
+  const {document,ui}=fixture(t,{conversations:service,onBusinessChange:()=>refreshes++,send:async()=>writes++});
+  ui.open();click(document,'history');await settle(()=>document.querySelector('[data-flow-action="select-conversation"]'));
+  click(document,'select-conversation');await settle(()=>document.querySelector('.flow-mutation'));
+  assert.match(document.querySelector('.flow-mutation').textContent,/测试门店/);assert.equal(writes,0);assert.equal(refreshes,0);
+});
+
+test('closing the browser during a write leaves a resumable message with the original request ID',async t=>{
+  const id='00000000-0000-4000-8000-000000000003',requestId='00000000-0000-4000-8000-000000000004';
+  const service=conversationService([{id,version:1,title:'中断的操作',updatedAt:'2026-10-22',messages:[{role:'user',text:'新增门店',requestId},{role:'assistant',text:'',pending:true}],draft:''}]);
+  let payload;
+  const {document,ui}=fixture(t,{conversations:service,send:async(value,{onEvent})=>{payload=value;onEvent({type:'mutation',mutation:savedMutation(value.requestId,{replayed:true})});return {text:'已核对原先的门店'};}});
+  ui.open();click(document,'history');await settle(()=>document.querySelector('[data-flow-action="select-conversation"]'));
+  click(document,'select-conversation');await settle(()=>document.querySelector('[data-flow-action="retry"]'));
+  assert.match(document.querySelector('.flow-error').textContent,/上次处理已中断/);
+  click(document,'retry');await settle(()=>payload&&document.querySelector('.flow-conversation').getAttribute('aria-busy')==='false');
+  assert.equal(payload.requestId,requestId);assert.equal(document.querySelectorAll('.flow-mutation').length,1);
+  assert.equal([...service.rows.values()][0].messages[1].pending,undefined);
+});
+
+test('a write request is not sent until its retry ID has been saved with the conversation',async t=>{
+  const service=conversationService(),original=service.request;let failing=true,calls=0,requestId;
+  service.request=async(route,body)=>{
+    if(route==='/conversations'&&body){requestId ||= body.messages[0].requestId;if(failing)throw new Error('保存连接中断');}
+    return original(route,body);
+  };
+  const {window,document}=fixture(t,{conversations:service,send:async payload=>{calls++;assert.equal(payload.requestId,requestId);return {text:'已处理'};}});
+  click(document,'open');write(window,'新增门店');submit(window);
+  await settle(()=>document.querySelector('.flow-error'));
+  assert.match(document.querySelector('.flow-error').textContent,/操作尚未执行/);assert.equal(calls,0);
+  failing=false;click(document,'retry');await settle(()=>calls===1);
+});
 
 test('Flow renders untrusted model text as escaped content and only permits business citations',()=>{
   const html = formatFlowText('**已送达**\n<img src=x onerror=alert(1)>\n- `订单`');
@@ -89,7 +232,8 @@ test('streaming Flow keeps tools, sources, safe text and context without posting
   click(document,'open');write(window,'今天有什么订单？');submit(window);
   await settle(()=>document.querySelector('.flow-conversation').getAttribute('aria-busy')==='false');
   assert.equal(payload.message,'今天有什么订单？');
-  assert.deepEqual(Object.keys(payload).sort(),['context','conversationId','history','message']);
+  assert.deepEqual(Object.keys(payload).sort(),['context','conversationId','history','message','requestId']);
+  assert.match(payload.requestId,/^[a-f0-9-]{36}$/);
   assert.equal(payload.context.page,'overview');
   assert.equal(payload.state,undefined);
   assert.equal(document.querySelectorAll('.flow-message-user').length,1);

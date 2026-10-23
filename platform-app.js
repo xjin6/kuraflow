@@ -1,12 +1,14 @@
 import {createAccountsUI} from './accounts-ui.js';
+import {setPortalIcon} from './portal-icon.js';
 import {initSelectControls} from './ui-controls.js';
 const app=document.getElementById('app'),overlay=document.getElementById('overlay-root');
 const principal=window.__KURAFLOW_ACCOUNT_PRINCIPAL__;
+setPortalIcon('platform');
 const initialParams=new URLSearchParams(location.search);
 const recoveredDraft=initialParams.get('mode')==='create'?Object.fromEntries(initialParams):null;
 if(recoveredDraft)history.replaceState(null,'','/?login=platform');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const icons={refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',box:'<path d="m3 7 9-5 9 5-9 5zM3 7v10l9 5 9-5V7M12 12v10"/>',store:'<path d="M3 9h18l-2-6H5zM5 9v12h14V9M9 21v-6h6v6"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',plus:'<path d="M12 5v14M5 12h14"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/>',close:'<path d="m6 6 12 12M18 6 6 18"/>',clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2h6v4H9zM9 12h6M9 16h6"/>'};
+const icons={edit:'<path d="m16 3 5 5M4 20l4-1L21 6a2 2 0 0 0-3-3L5 16z"/>',refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',box:'<path d="m3 7 9-5 9 5-9 5zM3 7v10l9 5 9-5V7M12 12v10"/>',store:'<path d="M3 9h18l-2-6H5zM5 9v12h14V9M9 21v-6h6v6"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',plus:'<path d="M12 5v14M5 12h14"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/>',close:'<path d="m6 6 12 12M18 6 6 18"/>',clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2h6v4H9zM9 12h6M9 16h6"/>'};
 const icon=name=>`<span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons.store}</svg></span>`;
 const button=(label,action,type='secondary',extra='',ico='')=>`<button class="btn btn-${type}" data-action="${action}" ${extra}>${ico?icon(ico):''}${label}</button>`;
 async function request(path,body){const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});const result=await r.json();if(!r.ok){if(r.status===401)location.href='/?login=platform';const error=new Error(result.error||'操作未完成。');error.status=r.status;throw error;}return result;}

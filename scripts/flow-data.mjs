@@ -3,7 +3,7 @@ import { savedAmount, deliveryDay, validDay } from '../overview-data.js';
 
 const PAGE_SIZE = 250;
 const MAX_RECORDS = 50000;
-const KINDS = ['product', 'store', 'order', 'document', 'quote', 'cost', 'company'];
+const KINDS = ['product', 'store', 'order', 'document', 'quote', 'cost', 'company', 'task'];
 const STAGES = ['pending', 'packing', 'ready', 'delivering', 'delivered'];
 const number = value => value === '' || value == null || !Number.isFinite(Number(value)) ? null : Number(value);
 const copy = value => value == null ? value : structuredClone(value);
@@ -68,13 +68,14 @@ function quoteFields(row = {}) {
 }
 
 function citation(kind, id, label, extra = {}) {
-  const pages = { product: 'catalogue', store: 'stores', order: 'orders', document: 'documents', quote: 'stores', cost: 'catalogue', company: 'overview' };
+  const pages = { product: 'catalogue', store: 'stores', order: 'orders', document: 'documents', quote: 'stores', cost: 'catalogue', company: 'overview', task:'tasks' };
   const params = new URLSearchParams({ page: pages[kind] });
   if (kind === 'order') params.set('order', id);
   if (kind === 'product') params.set('product', id);
   if (kind === 'store') { params.set('tab', 'stores'); params.set('store', id); }
   if (kind === 'quote') { params.set('tab', 'quotes'); params.set('store', extra.storeId); }
   if (kind === 'cost') params.set('tab', 'costs');
+  if (kind === 'task') params.set('tab','manual');
   if (kind === 'document' && extra.storeId) params.set('store', extra.storeId);
   return { id: `${kind}:${id}`, kind, recordId: id, label, href: '/?' + params.toString() };
 }
@@ -104,7 +105,9 @@ function indexSnapshot(snapshot) {
     });
   }
   for (const store of stores.values()) add('store', store.id, store.name || store.id,
-    select(store, ['id', 'name', 'city', 'prefecture', 'municipality', 'ward', 'addressDetail', 'address', 'phone', 'contact', 'route', 'deletedAt']));
+    select(store, ['id', 'name', 'city', 'prefecture', 'municipality', 'ward', 'prefectureCode', 'municipalityCode', 'wardCode', 'addressDetail', 'address', 'phone', 'contact', 'route', 'deletedAt']));
+  for (const task of state.manualTasks || []) add('task',task.id,task.title || task.id,
+    select(task,['id','title','note','dueDate','source','createdAt','updatedAt','completedAt','deletedAt']));
   for (const order of state.orders || []) add('order', order.id, `${order.storeName || stores.get(order.storeId)?.name || '门店'} · ${order.id}`, {
     ...select(order, ['id', 'storeId', 'storeName', 'date', 'deliveryDate', 'submittedAt', 'stage', 'note', 'departedAt', 'deliveredAt', 'receivedBy', 'issue', 'issueReportedAt', 'shipping', 'shippingTax']),
     isDemo: isDemo(order),

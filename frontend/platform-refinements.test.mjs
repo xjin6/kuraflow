@@ -138,7 +138,7 @@ test('platform deletes and restores only the confirmed member using the displaye
     }
     throw Error(call.path);
   }});
-  await openStores(document);assert.equal(action(document,'accounts-staff-delete','store-owner'),null);
+  await openStores(document);click(document,'[data-action="accounts-directory-view"][data-view="list"]');assert.equal(action(document,'accounts-staff-delete','store-owner'),null);
   action(document,'accounts-staff-delete','store-member').click();const form=document.getElementById('accounts-member-lifecycle-form');assert.ok(form);
   submit(window,form);submit(window,form);await until(()=>calls.some(call=>call.path==='/api/team/delete'));
   const deletes=calls.filter(call=>call.path==='/api/team/delete');assert.equal(deletes.length,1);assert.deepEqual(deletes[0].body,{accountId:'store-member',version:4});
@@ -162,7 +162,7 @@ test('a failed member deletion keeps its confirmation and saved member visible',
     if(call.path==='/api/team/delete')return response({error:'账号已变更，请刷新。',code:'ACCOUNT_CHANGED'},409);
     throw Error(call.path);
   }});
-  await openStores(document);action(document,'accounts-staff-delete','store-member').click();const form=document.getElementById('accounts-member-lifecycle-form');
+  await openStores(document);click(document,'[data-action="accounts-directory-view"][data-view="list"]');action(document,'accounts-staff-delete','store-member').click();const form=document.getElementById('accounts-member-lifecycle-form');
   submit(window,form);await until(()=>form.querySelector('[role="alert"]')?.textContent.includes('账号已变更'));
   assert.equal(document.getElementById('accounts-member-lifecycle-form'),form);
   assert.ok(document.querySelector('[data-customer-store="store-a"]').textContent.includes('user_store-member'));
@@ -185,4 +185,25 @@ test('management owner can remove members while ordinary administrators receive 
   const second=await fixture(t,{controller:true,principal:memberPrincipal,route:call=>{if(call.path.startsWith('/api/team/list?'))return response({...team,canManage:false,accounts:[account('kitchen-owner','admin','owner'),account('kitchen-member')]});throw Error(call.path);}});
   assert.equal(second.document.querySelector('[data-action="accounts-staff-delete"]'),null);
   assert.equal(second.document.querySelector('[data-action="accounts-staff-restore"]'),null);
+});
+
+test('directory cards keep full store accounts reachable without loading credentials or mutating records',async t=>{
+  const {document,calls}=await fixture(t,{route:call=>{
+    if(call.path==='/api/platform/customer?tenant=tenant-a')return response(customer());
+    throw Error(call.path);
+  }});
+  click(document,'[data-action="accounts-customer-view"][data-view="card"]');
+  assert.ok(document.querySelector('.stores-grid > .store-card[data-customer-card="tenant-a"]'));
+  await openStores(document);
+  const card=document.querySelector('.stores-grid > .store-card[data-customer-store="store-a"]');assert.ok(card);
+  assert.equal(card.querySelector('.customer-account-list'),null);
+  click(document,'[data-action="accounts-customer-store-detail"][data-store="store-a"]');
+  const detail=document.querySelector('[role="dialog"]');assert.ok(detail);
+  assert.match(detail.textContent,/user_store-member/);
+  assert.ok(detail.querySelector('[data-action="accounts-customer-avatar"][data-id="store-owner"]'));
+  assert.ok(detail.querySelector('[data-action="accounts-staff-delete"][data-id="store-member"]'));
+  assert.equal(calls.some(call=>call.method==='POST'),false);
+  assert.equal(calls.some(call=>call.path==='/api/team/master-key'),false);
+  click(document,'[data-action="close"]');
+  assert.ok(document.querySelector('.stores-grid > .store-card[data-customer-store="store-a"]'));
 });

@@ -165,6 +165,23 @@
 .flow-save-status.has-error { padding:3px 4px 8px; }
 .flow-save-status span { flex:1; }
 .flow-save-status button { border:0; padding:3px 0 3px 4px; white-space:nowrap; background:none; color:#58758c; font-size:10px; }
+.flow-mutations { display:grid; gap:7px; margin:10px 0; }
+.flow-mutation { display:flex; align-items:center; gap:9px; min-width:0; padding:10px; border:1px solid #dbe4eb; border-radius:6px; background:#f7f9fb; color:#496579; text-decoration:none; }
+.flow-mutation > svg { flex:none; width:16px; height:16px; }
+.flow-mutation > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.flow-mutation strong { display:block; font-size:12px; line-height:1.6; font-weight:500; }
+.flow-mutation small { display:block; font-size:11px; line-height:1.6; color:#718696; }
+.flow-proposals { display:grid; gap:10px; margin-top:14px; }
+.flow-proposal { min-width:0; padding:12px; border:1px solid #dbe4eb; border-radius:6px; background:#f7f9fb; color:#496579; overflow-wrap:anywhere; }
+.flow-proposal > strong { display:block; font-size:13px; line-height:1.6; }
+.flow-proposal dl { display:grid; gap:5px; margin:10px 0; font-size:12px; line-height:1.6; }
+.flow-proposal dl > div { display:grid; grid-template-columns:90px minmax(0,1fr); gap:8px; }
+.flow-proposal dt { color:#718696; }
+.flow-proposal dd { margin:0; white-space:pre-wrap; }
+.flow-proposal p { margin:8px 0; font-size:12px; line-height:1.65; }
+.flow-proposal > small { display:block; color:#718696; font-size:11px; line-height:1.6; }
+.flow-proposal-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:11px; }
+.flow-proposal .flow-proposal-error { color:#a7646a; }
 .flow-image { margin:13px 0 15px; padding:0; overflow:hidden; border:1px solid #e0e7ec; border-radius:8px; background:#fff; }
 .flow-image-preview { display:block; position:relative; min-height:130px; background:#f2f5f8; }
 .flow-image-preview img { display:block; width:100%; height:auto; min-height:130px; max-height:440px; object-fit:contain; position:relative; }

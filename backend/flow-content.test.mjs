@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sanitizeFlowSVG,cleanFlowMessages,safeFlowImage} from './flow-content.js';
 const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><rect width="800" height="500" fill="#fff"/><text x="40" y="60" font-size="24">库存 &amp; 配货</text></svg>';
+test('confirmation cards preserve safe review fields but never client commands or confirmation tokens',()=>{
+  const proposal={id:crypto.randomUUID(),requestId:crypto.randomUUID(),operation:'flow_delete_store',label:'删除门店',recordLabel:'测试店',status:'pending',impact:'保留历史',details:[{label:'地址',value:'大阪市'}],command_json:'never-store-command',confirmed:true};
+  const rows=cleanFlowMessages([{role:'assistant',text:'请确认',proposals:[proposal,{...proposal,id:'invalid'},{...proposal,status:'approved'}]}]);
+  assert.equal(rows[0].proposals.length,1);assert.equal(rows[0].proposals[0].status,'pending');assert.equal(rows[0].proposals[0].details[0].value,'大阪市');
+  assert.doesNotMatch(JSON.stringify(rows),/never-store-command|confirmed|command_json/);
+});
+test('write retry IDs and safe receipts persist without credentials or arbitrary links',()=>{
+  const requestId=crypto.randomUUID(),mutation={id:`flow:${requestId}:flow_create_store:${'b'.repeat(64)}`,operation:'flow_create_store',label:'新增门店',recordId:'s-test',recordLabel:'测试店',href:'/?page=stores&store=s-test',revision:1,status:'saved',masterCode:'never-save'};
+  const rows=cleanFlowMessages([{role:'user',text:'新增门店',requestId,tenantId:'forged'},{role:'assistant',text:'已保存',pending:true,mutations:[mutation,{...mutation,href:'/?page=stores&token=secret'},{...mutation,href:'https://evil.test'}]}]);
+  assert.equal(rows[0].requestId,requestId);assert.equal(rows[1].mutations.length,1);assert.equal(rows[1].mutations[0].href,mutation.href);
+  assert.equal(rows[1].pending,true);
+  assert.doesNotMatch(JSON.stringify(rows),/never-save|masterCode|forged|evil.test/);
+});
 test('safe SVG is reconstructed, dimensions normalized and entities remain text',()=>{
   const result=sanitizeFlowSVG(svg);assert.match(result,/width="800"/);assert.match(result,/height="500"/);assert.match(result,/库存 &amp; 配货/);
   const escaped=sanitizeFlowSVG(svg.replace('库存 &amp; 配货','<![CDATA[<script>alert(1)</script>]]>'));assert.match(escaped,/&lt;script&gt;/);assert.ok(!escaped.includes('<script>'));

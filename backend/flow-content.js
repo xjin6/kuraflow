@@ -12,16 +12,28 @@ export function safeFlowImage(value) {
 function safeHref(value) {
   if(typeof value!=='string'||!value.startsWith('/?'))return null;
   let url;try {url=new URL(value,'https://kuraflow.invalid');}catch{return null;}
-  if(!['overview','orders','catalogue','stores','documents'].includes(url.searchParams.get('page')) ||
+  if(!['overview','orders','catalogue','stores','documents','tasks'].includes(url.searchParams.get('page')) ||
     [...url.searchParams.keys()].some(key=>!['page','order','store','product','tab','month','from','to','range','demo'].includes(key)))return null;
   return url.pathname+url.search;
+}
+export function cleanFlowMutation(row) {
+  if(!row||typeof row.id!=='string'||!/^flow:[a-f0-9-]{36}:flow_[a-z_]+:[a-f0-9]{64}$/.test(row.id)||!['saved','pending_account'].includes(row.status)||!Number.isSafeInteger(row.revision)||row.revision<0)return null;
+  const href=safeHref(row.href);if(!href)return null;
+  return {id:row.id,operation:clip(row.operation,64),label:clip(row.label,80),recordId:clip(row.recordId,160),recordLabel:clip(row.recordLabel,160),href,revision:row.revision,status:row.status,replayed:row.replayed===true};
+}
+export function cleanFlowProposal(row) {
+  if(!row||!UUID.test(row.id||'')||!UUID.test(row.requestId||'')||!['pending','saved','cancelled','expired'].includes(row.status))return null;
+  return {id:row.id,requestId:row.requestId,operation:clip(row.operation,64),label:clip(row.label,80),recordLabel:clip(row.recordLabel,160),status:row.status,impact:clip(row.impact,500),details:(Array.isArray(row.details)?row.details:[]).slice(0,24).map(field=>({label:clip(field?.label,80),value:clip(field?.value,4000)}))};
 }
 export function cleanFlowMessages(input) {
   if(!Array.isArray(input)||input.length>120)fail('对话过长，请新建对话。');
   if(JSON.stringify(input).length>512000)fail('对话内容过大，请新建对话。',413);
   return input.map(row=>{
     if(!row||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||row.text.length>40000)fail('对话内容格式不正确。');
-    return {role:row.role,text:row.text,...(row.role==='assistant'?{
+    return {role:row.role,text:row.text,...(row.role==='user'&&typeof row.requestId==='string'&&UUID.test(row.requestId)?{requestId:row.requestId}:{}),...(row.role==='assistant'?{
+      ...(row.pending===true?{pending:true}:{}),
+      ...(Array.isArray(row.mutations)?{mutations:row.mutations.slice(0,6).map(cleanFlowMutation).filter(Boolean)}:{}),
+      ...(Array.isArray(row.proposals)?{proposals:row.proposals.slice(0,6).map(cleanFlowProposal).filter(Boolean)}:{}),
       steps:(Array.isArray(row.steps)?row.steps:[]).slice(0,24).flatMap(step=>/^(?:prepare|model|answer|tool-\d{1,2})$/.test(step?.id)&&['running','done','error','stopped'].includes(step.status)?[{id:step.id,label:clip(step.label,80),status:step.status,...(step.detail?{detail:clip(step.detail,160)}:{})}]:[]),
       tools:(Array.isArray(row.tools)?row.tools:[]).slice(0,24).map(tool=>({label:clip(typeof tool==='string'?tool:tool?.label||tool?.name,100)})),
       sources:(Array.isArray(row.sources)?row.sources:[]).slice(0,30).flatMap(source=>{const href=safeHref(source?.href||source?.url);return href?[{label:clip(source.label||source.title,160)||'查看记录',href}]:[];}),

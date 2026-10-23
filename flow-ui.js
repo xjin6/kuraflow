@@ -16,7 +16,7 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 export function safeFlowHref(value) {
   if (typeof value !== 'string' || !value.startsWith('/?')) return null;
   const url = new URL(value, 'https://kuraflow.invalid');
-  const pages = new Set(['overview','orders','catalogue','stores','documents']);
+  const pages = new Set(['overview','orders','catalogue','stores','documents','tasks']);
   const keys = new Set(['page','order','store','product','tab','month','from','to','range','demo']);
   if (!pages.has(url.searchParams.get('page')) || [...url.searchParams.keys()].some(key => !keys.has(key))) return null;
   return url.pathname + url.search;
@@ -59,16 +59,19 @@ function imagesFrom(message) {
 function renderImage(image) {
   return `<figure class="flow-image"><a class="flow-image-preview" href="${escape(image.url)}" target="_blank" rel="noopener noreferrer" aria-label="查看大图：${escape(image.alt)}"><span class="flow-image-state" role="status">图片加载中…</span><img src="${escape(image.url)}" alt="${escape(image.alt)}" loading="lazy" decoding="async" data-flow-image></a><figcaption><span>${escape(image.title || image.alt)}</span><a href="${escape(image.url)}" target="_blank" rel="noopener noreferrer">查看大图 ${glyph('expand')}</a></figcaption></figure>`;
 }
-const newConversation = value => ({id:value?.id || null, version:value?.version, messages:Array.isArray(value?.messages)?value.messages:[], draft:value?.draft || '', revision:0, savedRevision:0, error:'', saving:false, queue:Promise.resolve()});
+const newConversation = value => ({id:value?.id || null, version:value?.version,
+  messages:Array.isArray(value?.messages)?value.messages.map(message=>message.role==='assistant'&&message.pending?{...message,pending:false,error:message.error||'上次处理已中断，请核对保存结果。'}:message):[],
+  draft:value?.draft || '', revision:0, savedRevision:0, error:'', saving:false, queue:Promise.resolve()});
 
-export function createFlowUI({enabled = true, initialStatus = null, getContext = () => ({}), onOpen = () => {}, endpoint = '/api/flow', principal = {}, onNavigate = null, request: requestOverride, send: sendOverride} = {}) {
+export function createFlowUI({enabled = true, initialStatus = null, getContext = () => ({}), onOpen = () => {}, onBusinessChange = () => {}, endpoint = '/api/flow', principal = {}, onNavigate = null, request: requestOverride, send: sendOverride} = {}) {
   if (!enabled) return {launcher: () => '', sync() {}, open() {}, destroy() {}};
   const localPreview=location.protocol==='http:'&&['localhost','127.0.0.1'].includes(location.hostname);
   const root = document.createElement('div'); root.id = 'flow-root'; document.body.append(root);
-  let opened=false, busy=false, controller=null, returnFocus=null, destroyed=false, generation=0;
+  let opened=false, busy=false, controller=null, returnFocus=null, destroyed=false, generation=0, resolving=null;
   let status=initialStatus,statusError='',statusFlight=null,policyTimer=null,pendingOpen=false;
   let current=newConversation(), conversations=[], historyOpen=false, historyLoading=false, historyError='', transitioning=false, deleted=null, draftTimer=null, historyRequest=0, historyMutation=0;
   const historyChanges = new Map();
+  const notifiedMutations = new Set();
   const listeners = new AbortController();
   const request = requestOverride || (async (route, body) => {
     const response = await fetch(endpoint + route, {credentials:'same-origin',cache:'no-store',...(body === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
@@ -98,7 +101,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     if (!current.messages.length && opened) renderMessages();
   }
   function renderShell() {
-    root.innerHTML = `<aside id="flow-panel" class="flow-panel" aria-label="Flow 助手" role="dialog" ${opened?'':'hidden'}><header class="flow-header"><div class="flow-title">${FLOW_ICON}<h2>Flow</h2><span class="flow-preview-tag">${localPreview?'预览':'Beta'}</span></div><div class="flow-header-actions"><button type="button" class="icon-button" data-flow-action="new" aria-label="新对话" title="新对话">${glyph('plus')}</button><button type="button" class="icon-button" data-flow-action="close" aria-label="关闭 Flow" title="关闭">${glyph('close')}</button></div></header><div class="flow-context-row"><div class="flow-current-context">${glyph('chevron')}<span>${escape(contextLabel())}</span></div><span class="flow-status"><i></i><span>${escape(statusLabel())}</span></span></div><div class="flow-access-note" role="status" hidden></div><div class="flow-thread-bar"><span class="flow-thread-title"></span><button type="button" data-flow-action="history" aria-controls="flow-history" aria-expanded="${historyOpen}">${glyph('history')}<span>对话列表</span></button></div><section id="flow-history" class="flow-history" aria-label="对话列表" hidden></section><div class="flow-history-feedback" role="status" hidden></div><div class="flow-conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="与 Flow 的对话"></div><div class="flow-compose-area"><div class="flow-save-status" role="status"></div><div class="flow-compose-status" role="status"></div><form id="flow-compose" class="flow-compose"><label class="visually-hidden" for="flow-message">向 Flow 提问</label><textarea id="flow-message" name="message" rows="2" maxlength="4000" placeholder="问问 Flow…" enterkeyhint="send">${escape(current.draft)}</textarea><div class="flow-compose-bottom"><span>仅查询 · 不修改业务数据</span><button type="submit" class="flow-send" aria-label="发送消息">${glyph('send')}</button></div></form><div class="flow-composer-hint">回答基于当前数据，请核对重要结果</div></div></aside>`;
+    root.innerHTML = `<aside id="flow-panel" class="flow-panel" aria-label="Flow 助手" role="dialog" ${opened?'':'hidden'}><header class="flow-header"><div class="flow-title">${FLOW_ICON}<h2>Flow</h2><span class="flow-preview-tag">${localPreview?'预览':'Beta'}</span></div><div class="flow-header-actions"><button type="button" class="icon-button" data-flow-action="new" aria-label="新对话" title="新对话">${glyph('plus')}</button><button type="button" class="icon-button" data-flow-action="close" aria-label="关闭 Flow" title="关闭">${glyph('close')}</button></div></header><div class="flow-context-row"><div class="flow-current-context">${glyph('chevron')}<span>${escape(contextLabel())}</span></div><span class="flow-status"><i></i><span>${escape(statusLabel())}</span></span></div><div class="flow-access-note" role="status" hidden></div><div class="flow-thread-bar"><span class="flow-thread-title"></span><button type="button" data-flow-action="history" aria-controls="flow-history" aria-expanded="${historyOpen}">${glyph('history')}<span>对话列表</span></button></div><section id="flow-history" class="flow-history" aria-label="对话列表" hidden></section><div class="flow-history-feedback" role="status" hidden></div><div class="flow-conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="与 Flow 的对话"></div><div class="flow-compose-area"><div class="flow-save-status" role="status"></div><div class="flow-compose-status" role="status"></div><form id="flow-compose" class="flow-compose"><label class="visually-hidden" for="flow-message">向 Flow 提问</label><textarea id="flow-message" name="message" rows="2" maxlength="4000" placeholder="问问 Flow…" enterkeyhint="send">${escape(current.draft)}</textarea><div class="flow-compose-bottom"><span>可查询 · 确认后操作</span><button type="submit" class="flow-send" aria-label="发送消息">${glyph('send')}</button></div></form><div class="flow-composer-hint">回答基于当前数据，请核对重要结果</div></div></aside>`;
     renderAccess(); renderHistory(); renderMessages(); updateBusy(); renderSaveStatus();
   }
   function renderAccess() {
@@ -120,7 +123,7 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
   function renderMessage(message,index) {
     if(message.role==='user')return `<article class="flow-message flow-message-user"><div class="flow-user-text">${escape(message.text)}</div></article>`;
     const sources=message.sources||[], content=imagesFrom(message);
-    return `<article class="flow-message flow-message-assistant" data-flow-message="${index}"><div class="flow-assistant-label">${FLOW_ICON}<strong>Flow</strong></div>${renderProgress(message,index)}<div class="flow-answer">${formatFlowText(content.text)}${content.images.map(renderImage).join('')}</div>${sources.length?`<div class="flow-sources" aria-label="数据来源">${sources.map(source=>{const href=safeFlowHref(source.href||source.url);return href?`<a href="${escape(href)}" class="flow-source-link">${escape(source.label||source.title||'查看记录')}${glyph('arrow')}</a>`:'';}).join('')}</div>`:''}${message.stopped?'<p class="flow-message-note">已停止</p>':''}${message.error?`<div class="flow-error" role="alert"><p>${escape(message.error)}</p>${index===current.messages.length-1?'<button type="button" class="text-button" data-flow-action="retry">重试</button>':''}</div>`:''}</article>`;
+    return `<article class="flow-message flow-message-assistant" data-flow-message="${index}"><div class="flow-assistant-label">${FLOW_ICON}<strong>Flow</strong></div>${renderProgress(message,index)}<div class="flow-answer">${formatFlowText(content.text)}${content.images.map(renderImage).join('')}</div>${sources.length?`<div class="flow-sources" aria-label="数据来源">${sources.map(source=>{const href=safeFlowHref(source.href||source.url);return href?`<a href="${escape(href)}" class="flow-source-link">${escape(source.label||source.title||'查看记录')}${glyph('arrow')}</a>`:'';}).join('')}</div>`:''}${message.stopped?`<p class="flow-message-note">${message.mutations?.length?'已停止，已保存的操作仍然有效。':'已停止'}</p>`+ (index===current.messages.length-1?'<button type="button" class="text-button" data-flow-action="retry">继续核对</button>':''):''}${message.error?`<div class="flow-error" role="alert"><p>${escape(message.error)}</p>${index===current.messages.length-1?'<button type="button" class="text-button" data-flow-action="retry">重试</button>':''}</div>`:''}</article>`;
   }
   function renderMessages() {
     const log=root.querySelector('.flow-conversation'); if(!log)return;
@@ -129,10 +132,27 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     const focused=document.activeElement, focusedArticle=focused?.closest?.('[data-flow-message]'), focusIndex=focusedArticle?.dataset.flowMessage;
     const focusTarget=focused?.matches?.('.flow-tool-trace summary')?'summary':null;
     const focusHref=focused?.classList.contains('flow-source-link')?focused.getAttribute('href'):null;
+    const focusProposal=focused?.closest?.('[data-flow-proposal]')?.dataset.flowProposal,focusAction=focused?.dataset?.flowAction;
     log.innerHTML=current.messages.length?current.messages.map(renderMessage).join(''):`<div class="flow-empty"><div class="flow-empty-mark">${FLOW_ICON}</div><h3>从这里开始</h3><div class="flow-suggestions">${promptChoices().map(text=>`<button type="button" data-flow-prompt="${escape(text)}"><span>${escape(text)}</span>${glyph('arrow')}</button>`).join('')}</div></div>`;
+    current.messages.forEach((message,index)=>{
+      const article=log.querySelector(`[data-flow-message="${index}"]`);
+      if(article&&(message.proposals||[]).some(validProposal)) {
+        const section=document.createElement('section');section.className='flow-proposals';section.setAttribute('aria-label','操作确认');
+        section.innerHTML=(message.proposals||[]).filter(validProposal).map(row=>{
+          const waiting=row.status==='pending',disabled=busy||transitioning||!!resolving||!entitled()||row.verifying;
+          return `<div class="flow-proposal" data-flow-proposal="${escape(row.id)}" tabindex="-1"><strong>${escape(row.label)} · ${escape(row.recordLabel)}</strong><dl>${(row.details||[]).map(field=>`<div><dt>${escape(field.label)}</dt><dd>${escape(field.value)}</dd></div>`).join('')}</dl><p>${escape(row.impact)}</p><small role="status">${({pending:row.verifying?'正在核对操作…':'尚未执行，请确认以上内容',saved:'已确认并保存',cancelled:'已取消，未执行',expired:'确认已过期，请重新发送请求'})[row.status]}</small>${waiting?`<div class="flow-proposal-actions"><button type="button" class="btn btn-primary" data-flow-action="confirm-operation" ${disabled?'disabled':''}>${resolving===row.id?'正在处理…':'确认'+(row.operation.includes('_delete_')?'删除':row.operation.includes('_create_')?'新增':row.operation.includes('_restore_')?'恢复':'修改')}</button><button type="button" class="btn btn-secondary" data-flow-action="cancel-operation" ${disabled?'disabled':''}>取消</button></div>`:''}${row.error?`<p class="flow-proposal-error" role="alert">${escape(row.error)}</p>`:''}</div>`;
+        }).join('');article.append(section);
+      }
+      const rows=(message.mutations||[]).filter(row=>validMutation(row));
+      if(!rows.length)return;
+      const list=document.createElement('div');list.className='flow-mutations';list.setAttribute('aria-label','已保存的操作');
+      list.innerHTML=rows.map(row=>`<a class="flow-mutation flow-source-link" href="${escape(safeFlowHref(row.href))}">${glyph('check')}<span><strong>${escape(row.label)} · ${escape(row.recordLabel)}</strong><small>${row.status==='pending_account'?'门店已保存，负责人登录待开通':'已保存'}${row.replayed?' · 已核对原操作':''}</small></span>${glyph('arrow')}</a>`).join('');
+      log.querySelector(`[data-flow-message="${index}"] .flow-answer`)?.before(list);
+    });
     for(const id of openTraces)log.querySelector(`[data-flow-message="${id}"] .flow-tool-trace`)?.setAttribute('open','');
     if(focusIndex&&focusTarget)log.querySelector(`[data-flow-message="${focusIndex}"] ${focusTarget}`)?.focus({preventScroll:true});
     if(focusIndex&&focusHref)[...log.querySelectorAll(`[data-flow-message="${focusIndex}"] .flow-source-link`)].find(node=>node.getAttribute('href')===focusHref)?.focus({preventScroll:true});
+    if(focusProposal){const card=[...log.querySelectorAll('[data-flow-proposal]')].find(node=>node.dataset.flowProposal===focusProposal);(card?.querySelector(`[data-flow-action="${focusAction}"]:not(:disabled)`)||card)?.focus({preventScroll:true});}
     log.scrollTop=bottom?log.scrollHeight:old;
     root.querySelector('.flow-thread-title').textContent=title(current);
   }
@@ -157,10 +177,10 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
   }
   function updateBusy(label='') {
     const button=root.querySelector('.flow-send'); if(!button)return;
-    button.innerHTML=glyph(busy?'stop':'send'); button.setAttribute('aria-label',busy?'停止生成':'发送消息'); button.classList.toggle('is-stopping',busy); button.disabled=transitioning||(!busy&&(!current.draft.trim()||!connected()));
+    button.innerHTML=glyph(busy?'stop':'send'); button.setAttribute('aria-label',busy?'停止生成':'发送消息'); button.classList.toggle('is-stopping',busy); button.disabled=!!resolving||transitioning||(!busy&&(!current.draft.trim()||!connected()));
     root.querySelector('.flow-compose-status').textContent=busy?label||'Flow 正在处理…':'';
     root.querySelector('.flow-conversation').setAttribute('aria-busy',String(busy));
-    root.querySelectorAll('[data-flow-action="new"],[data-flow-action="history"]').forEach(node=>{node.disabled=transitioning;});
+    root.querySelectorAll('[data-flow-action="new"],[data-flow-action="history"]').forEach(node=>{node.disabled=transitioning||!!resolving;});
   }
   async function refreshHistory() {
     const requestId=++historyRequest, startedAt=historyMutation; historyLoading=true; renderHistory();
@@ -198,20 +218,22 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
   function stopCurrent() {
     if(!busy)return;
     generation++;controller?.abort();controller=null;busy=false;
-    const last=current.messages.at(-1);if(last?.role==='assistant'){last.stopped=true;finishProgress(last,'stopped');touch();}
+    const last=current.messages.at(-1);if(last?.role==='assistant'){delete last.pending;last.stopped=true;finishProgress(last,'stopped');touch();}
     updateBusy();renderMessages();
   }
   async function changeConversation(id=null) {
-    if(transitioning)return; transitioning=true; stopCurrent();updateBusy();
+    if(transitioning||resolving)return; transitioning=true; stopCurrent();updateBusy();
     if(!await saveConversation()){transitioning=false;updateBusy();return;}
     try {
       const next=id?newConversation((await request(`/conversations/${id}`)).conversation):newConversation();
-      current=next;historyOpen=false;historyError='';renderShell();root.querySelector('textarea')?.focus({preventScroll:true});
+      current=next;historyOpen=false;historyError='';
+      for(const message of current.messages)for(const row of message.proposals||[])row.verifying=true;
+      renderShell();await recoverProposals(current);root.querySelector('textarea')?.focus({preventScroll:true});
     } catch(error){historyError=error.message;renderHistory();}
-    finally{transitioning=false;updateBusy();renderHistory();}
+    finally{transitioning=false;updateBusy();renderHistory();renderMessages();}
   }
   async function deleteConversation(id) {
-    if(transitioning)return;transitioning=true;historyError='';
+    if(transitioning||resolving)return;transitioning=true;historyError='';
     if(current.id===id)stopCurrent();updateBusy();renderHistory();
     try {
       if(current.id===id)await current.queue;
@@ -281,6 +303,8 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       if(event.tools)answer.tools=event.tools;
       if(Array.isArray(event.steps))for(const step of event.steps)recordProgress(answer,step);
       if(Array.isArray(event.images)){answer.images||=[];for(const image of event.images)if(safeFlowImageHref(image?.url)&&!answer.images.some(row=>row.url===image.url))answer.images.push(image);}
+      if(Array.isArray(event.mutations))for(const mutation of event.mutations)recordMutation(answer,mutation);
+      if(Array.isArray(event.proposals))for(const proposal of event.proposals)recordProposal(answer,proposal);
     }
     if(kind==='progress'){
       if(recordProgress(answer,event))updateBusy(event.status==='running'?event.label.slice(0,100):'正在整理回答…');
@@ -292,6 +316,8 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       updateBusy(kind==='tool_result'?'正在整理回答…':label);
     }
     if(kind==='sources'||kind==='citations')answer.sources=event.sources||event.citations||[];
+    if(kind==='mutation')recordMutation(answer,event.mutation);
+    if(kind==='proposal')recordProposal(answer,event.proposal);
     if(kind==='status')updateBusy('正在处理…');
     if(kind==='error')throw new Error(event.message||event.error||'回答中断，请重试。');
     touch(conversation);renderMessages();
@@ -306,32 +332,88 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
     try {while(true){const {value,done}=await reader.read();pending+=decoder.decode(value,{stream:!done});if(pending.length>1000000)throw new Error('回答数据过长，请缩小问题范围。');const lines=pending.split('\n');pending=lines.pop();for(const line of lines)consume(line);if(done){if(pending.trim())consume(pending);if(!finished)throw new Error('回答连接中断，请重试。');break;}}}
     catch(error){await reader.cancel().catch(()=>{});throw error;}finally{reader.releaseLock();}
   }
-  async function send(text) {
-    const prompt=String(text||'').trim();if(!prompt||busy||transitioning)return;
+  function validMutation(row) {
+    return row&&typeof row.id==='string'&&/^flow:[a-f0-9-]{36}:flow_[a-z_]+:[a-f0-9]{64}$/.test(row.id)&&safeFlowHref(row.href)&&['saved','pending_account'].includes(row.status)&&Number.isSafeInteger(row.revision)&&row.revision>=0;
+  }
+  function validProposal(row) {
+    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+    return row&&uuid.test(row.id||'')&&uuid.test(row.requestId||'')&&['pending','saved','cancelled','expired'].includes(row.status);
+  }
+  function recordProposal(answer,row) {
+    if(!validProposal(row))return;
+    const clip=(value,max)=>String(value||'').slice(0,max);
+    const proposal={id:row.id,requestId:row.requestId,operation:clip(row.operation,64),label:clip(row.label,80),recordLabel:clip(row.recordLabel,160),impact:clip(row.impact,500),status:row.status,details:(Array.isArray(row.details)?row.details:[]).slice(0,24).map(field=>({label:clip(field?.label,80),value:clip(field?.value,4000)}))};
+    answer.proposals||=[];const existing=answer.proposals.find(item=>item.id===proposal.id);
+    if(existing){Object.assign(existing,proposal);delete existing.verifying;delete existing.error;}
+    else if(answer.proposals.length<6)answer.proposals.push(proposal);
+  }
+  async function recoverProposals(conversation) {
+    for(let i=1;i<conversation.messages.length;i++){
+      const answer=conversation.messages[i],user=conversation.messages[i-1];
+      if(answer.role!=='assistant'||!user.requestId||!(answer.proposals?.length||answer.error||answer.stopped))continue;
+      try {
+        const result=await request('/actions/'+user.requestId);
+        answer.proposals=[];for(const row of result.proposals||[])recordProposal(answer,row);
+        for(const row of result.mutations||[])recordMutation(answer,row);
+      }catch(error){for(const row of answer.proposals||[]){row.verifying=true;row.error='操作状态暂时无法核对，请重新打开对话。';}}
+    }
+    touch(conversation);if(current===conversation)renderMessages();
+  }
+  async function resolveProposal(button,decision) {
+    if(busy||transitioning||resolving||!entitled())return;
+    const id=button.closest('[data-flow-proposal]')?.dataset.flowProposal,conversation=current;
+    const answer=conversation.messages.find(message=>message.proposals?.some(row=>row.id===id)),proposal=answer?.proposals.find(row=>row.id===id);
+    if(!proposal||proposal.status!=='pending'||proposal.verifying)return;
+    resolving=id;delete proposal.error;updateBusy();renderMessages();
+    try {
+      const result=await request('/actions/'+id+'/'+decision,{});
+      recordProposal(answer,result.proposal);for(const row of result.mutations||[])recordMutation(answer,row);
+    }catch(error){
+      proposal.error=error.message||'处理结果暂未确认，请重试核对。';
+      // A lost response may follow a successful commit. Recover the durable
+      // receipt before offering another confirmation of the same operation.
+      try {const result=await request('/actions/'+proposal.requestId);for(const row of result.proposals||[])recordProposal(answer,row);for(const row of result.mutations||[])recordMutation(answer,row);if(proposal.status==='pending')proposal.error=error.message;}catch{}
+    }finally{resolving=null;touch(conversation);if(!destroyed){updateBusy();renderMessages();}await saveConversation(conversation);}
+  }
+  function recordMutation(answer,row) {
+    if(!validMutation(row))return;
+    answer.mutations||=[];
+    const mutation={id:row.id,operation:String(row.operation||'').slice(0,64),label:String(row.label||'业务操作').slice(0,80),recordId:String(row.recordId||'').slice(0,160),recordLabel:String(row.recordLabel||'').slice(0,160),href:safeFlowHref(row.href),revision:row.revision,status:row.status,replayed:row.replayed===true};
+    const existing=answer.mutations.find(item=>item.id===mutation.id);
+    if(existing)Object.assign(existing,mutation);else if(answer.mutations.length<6)answer.mutations.push(mutation);else return;
+    if(!notifiedMutations.has(mutation.id)){
+      notifiedMutations.add(mutation.id);
+      Promise.resolve().then(()=>onBusinessChange(mutation)).catch(()=>{});
+    }
+  }
+  async function send(text,retryId,priorMutations=[]) {
+    const prompt=String(text||'').trim();if(!prompt||busy||transitioning||resolving)return;
     if(!connected()){renderAccess();return;}
     historyOpen=false;renderHistory();
     const conversation=current, requestGeneration=++generation;busy=true;controller=new AbortController();const signal=controller.signal;
     let chars=0;
     const history=conversation.messages.filter(message=>!message.error&&message.text).slice(-12).reverse().filter(message=>{chars+=message.text.length;return chars<=24000;}).reverse().map(({role,text})=>({role,content:text}));
-    conversation.draft='';conversation.messages.push({role:'user',text:prompt});
-    const answer={role:'assistant',text:'',tools:[],sources:[],images:[],steps:[]};conversation.messages.push(answer);touch(conversation);
+    const requestId=retryId||crypto.randomUUID();
+    conversation.draft='';conversation.messages.push({role:'user',text:prompt,requestId});
+    const answer={role:'assistant',text:'',tools:[],sources:[],images:[],steps:[],mutations:priorMutations.filter(validMutation),pending:true};conversation.messages.push(answer);touch(conversation);
     const textarea=root.querySelector('textarea');if(textarea){textarea.value='';textarea.style.height='';}
     updateBusy();renderMessages();
     try {
-      await saveConversation(conversation);
+      if(!await saveConversation(conversation)){answer.error='对话尚未保存，操作尚未执行。请重试。';return;}
       if(generation!==requestGeneration)return;
       if(signal.aborted){answer.stopped=true;return;}
-      const result=await sendStream({message:prompt,history,context:getContext(),...(conversation.id?{conversationId:conversation.id}:{})},signal,event=>{if(generation===requestGeneration&&current===conversation)onEvent(event,answer,conversation);});
+      const result=await sendStream({message:prompt,requestId,history,context:getContext(),...(conversation.id?{conversationId:conversation.id}:{})},signal,event=>{if(generation===requestGeneration&&current===conversation)onEvent(event,answer,conversation);});
       if(generation!==requestGeneration)return;
       if(result)onEvent({type:'done',...result},answer,conversation);
-      if(!answer.text&&!answer.images.length)answer.error='没有收到回答，请重试。';
+      if(!answer.text&&!answer.images.length&&!answer.mutations.length&&!answer.proposals?.length)answer.error='没有收到回答，请重试。';
     }catch(error){if(generation!==requestGeneration)return;if(error.name==='AbortError')answer.stopped=true;else answer.error=error.message||'连接中断，请重试。';}
-    finally{if(generation===requestGeneration){finishProgress(answer,answer.stopped?'stopped':answer.error?'error':'done');busy=false;controller=null;touch(conversation);updateBusy();renderMessages();await saveConversation(conversation);}}
+    finally{if(generation===requestGeneration){delete answer.pending;finishProgress(answer,answer.stopped?'stopped':answer.error?'error':'done');busy=false;controller=null;touch(conversation);updateBusy();renderMessages();await saveConversation(conversation);}}
   }
   document.addEventListener('click',async event=>{
     const button=event.target.closest('[data-flow-action],[data-flow-prompt]');if(!button||button.disabled)return;event.preventDefault();
     if(button.dataset.flowPrompt){await send(button.dataset.flowPrompt);return;}
     const action=button.dataset.flowAction;
+    if(action==='confirm-operation'||action==='cancel-operation'){await resolveProposal(button,action==='confirm-operation'?'confirm':'cancel');return;}
     if(action==='open')open(); if(action==='close')close();
     if(action==='history'){historyOpen=!historyOpen;if(historyOpen){if(!await saveConversation()){historyError=current.error;renderHistory();return;}await refreshHistory();}renderHistory();}
     if(action==='new')await changeConversation();
@@ -345,7 +427,8 @@ export function createFlowUI({enabled = true, initialStatus = null, getContext =
       if(busy||transitioning)return;
       if(!connected()){renderAccess();return;}
       const lastUser=current.messages.findLast(message=>message.role==='user');if(!lastUser)return;
-      current.messages=current.messages.slice(0,-2);touch();await send(lastUser.text);
+      const priorMutations=current.messages.at(-1)?.mutations||[];
+      current.messages=current.messages.slice(0,-2);touch();await send(lastUser.text,lastUser.requestId,priorMutations);
     }
     if(action==='refresh-status')await refreshStatus();
   },{signal:listeners.signal});

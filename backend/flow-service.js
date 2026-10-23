@@ -5,6 +5,7 @@ import {createFlowStore} from './flow-store.js';
 import {createFlowProvider} from './flow-provider.js';
 import {flowVisualTool} from './flow-content.js';
 import {getFlowPolicy} from './flow-control.js';
+import {createFlowActions,FLOW_WRITE_TOOLS,FLOW_ADDRESS_TOOL,FLOW_REQUEST_ID,isFlowWriteTool,findFlowAddresses} from './flow-actions.js';
 
 const CHAT_BUDGET_MS = 180000;
 const STREAM_LIMIT = 1536000;
@@ -19,7 +20,7 @@ const securityHeaders = {
 const json = (value, status = 200) => Response.json(value, {status, headers:securityHeaders});
 const fail = (message, status = 400) => {throw Object.assign(new Error(message), {status, publicError:true});};
 const safeModel = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]-]{0,120}$/.test(value);
-const toolLabel = name => ({flow_catalogue_summary:'统计商品类别',flow_render_visual:'绘制图片',flow_search:'搜索站内数据',flow_get_record:'读取业务详情',flow_business_summary:'汇总经营数据',flow_catalogue_audit:'核对库存和报价'}[name] || '查询业务数据');
+const toolLabel = name => FLOW_WRITE_TOOLS.find(tool=>tool.name===name)?.label || ({flow_find_address:'核对门店地址',flow_catalogue_summary:'统计商品类别',flow_render_visual:'绘制图片',flow_search:'搜索站内数据',flow_get_record:'读取业务详情',flow_business_summary:'汇总经营数据',flow_catalogue_audit:'核对库存和报价'}[name] || '查询业务数据');
 
 function assertPrincipal(principal) {
   if (!principal) fail('请先登录管理端。',401);
@@ -110,6 +111,28 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
       return json(managementStatus(policy,connection));
     }
     assertEnabled(policy);
+    const actionRoute=/^\/api\/flow\/actions\/([a-f0-9-]{36})(?:\/(confirm|cancel))?$/.exec(url.pathname);
+    if(actionRoute) {
+      if(!FLOW_REQUEST_ID.test(actionRoute[1])||(actionRoute[2]?request.method!=='POST':request.method!=='GET'))fail('接口不存在。',404);
+      const scope=JSON.stringify(['flow-chat',principal.tenantId,principal.userId]),owner=crypto.randomUUID();
+      if(!await store.acquireLease(scope,owner,CHAT_BUDGET_MS))fail('Flow 正在处理，请稍后再确认。',409);
+      pendingLease={scope,owner};
+      let requestId=actionRoute[1];
+      if(actionRoute[2]) {
+        const body=await readBody(request);if(Object.keys(body).length)fail('确认请求不能更改操作内容。');
+        const row=await env.DB.prepare('SELECT request_id FROM flow_proposals WHERE id=? AND tenant_id=? AND user_id=?').bind(actionRoute[1],principal.tenantId,principal.userId).first();
+        if(!row)fail('未找到该待确认操作。',404);requestId=row.request_id;
+      }
+      const checkAccess=async()=>{
+        const current=await identity(request,env);
+        if(!current||current.role!=='admin'||current.storeId||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.version!==principal.version||current.accountRole!==principal.accountRole)fail('登录状态已变更，请重新登录。',401);
+        assertEnabled(await getPolicy(env,principal.tenantId));
+      };
+      const businessDB=env.DB.withSession?env.DB.withSession('first-primary'):env.DB;
+      const actions=createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data:await loadData(businessDB,principal),checkAccess,readPolicy:()=>getPolicy(env,principal.tenantId)});
+      const result=actionRoute[2]?await actions.resolve(actionRoute[1],actionRoute[2]):{proposals:await actions.proposals(),mutations:await actions.receipts()};
+      await store.releaseLease(scope,owner);pendingLease=null;return json(result);
+    }
     const conversation=/^\/api\/flow\/conversations\/([^/]+)(?:\/(delete|restore))?$/.exec(url.pathname);
     const artifact=/^\/api\/flow\/artifacts\/([^/]+)$/.exec(url.pathname);
     if(request.method==='GET'&&url.pathname==='/api/flow/conversations')return json(await store.list(principal));
@@ -122,6 +145,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     if(conversation?.[2]==='restore')return json({conversation:await store.restore(principal,conversation[1])});
     if(url.pathname!=='/api/flow/chat')fail('接口不存在。',404);
     if(typeof body.message!=='string'||!body.message.trim()||body.message.length>4000)fail('请输入 1～4000 字的问题。');
+    if(body.requestId!=null&&(typeof body.requestId!=='string'||!FLOW_REQUEST_ID.test(body.requestId)))fail('请求编号不正确，请刷新页面。');
     const history=safeHistory(body.history),context=safeContext(body.context);
     const startedAt=Date.now(),scope=JSON.stringify(['flow-chat',principal.tenantId,principal.userId]),owner=crypto.randomUUID();
     if(!await store.acquireLease(scope,owner,CHAT_BUDGET_MS))fail('Flow 正在处理上一条问题，请稍等或先停止。',409);
@@ -136,7 +160,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     request.signal.throwIfAborted();
     const remainingBudget=CHAT_BUDGET_MS-(Date.now()-startedAt);
     if(remainingBudget<=0)fail('本次查询超时，请重试。',504);
-    const response=chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message:body.message.trim(),scope,owner,remainingBudget});
+    const response=chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message:body.message.trim(),requestId:body.requestId,scope,owner,remainingBudget});
     pendingLease=null;return response;
   } catch(error) {
     if(pendingLease)try{await store.releaseLease(pendingLease.scope,pendingLease.owner);}catch{}
@@ -151,7 +175,7 @@ function abortable(promise,signal) {
     Promise.resolve(promise).then(value=>{signal.removeEventListener('abort',abort);resolve(value);},error=>{signal.removeEventListener('abort',abort);reject(error);});
   });
 }
-function chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message,scope,owner,remainingBudget}) {
+function chatResponse({request,env,ctx,principal,identity,store,provider,loadData,getPolicy,model,history,context,message,requestId,scope,owner,remainingBudget}) {
   const controller=new AbortController(),signal=controller.signal;
   const cancel=()=>controller.abort(request.signal.reason);
   request.signal.addEventListener('abort',cancel,{once:true});
@@ -164,7 +188,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
     if(!force&&Date.now()-lastPolicyCheck<750)return;
     policyChecking||=(async()=>{
       const current=await identity(request,env);
-      if(!current||current.role!=='admin'||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.storeId)fail('登录状态已变更，请重新登录。',401);
+      if(!current||current.role!=='admin'||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.storeId||current.accountRole!==principal.accountRole||current.version!==principal.version)fail('登录状态已变更，请重新登录。',401);
       const policy=await getPolicy(env,principal.tenantId);assertEnabled(policy);
       if(policy.model&&policy.model!==model)fail('Flow 配置已更新，请重新提问。',409);
       lastPolicyCheck=Date.now();
@@ -185,7 +209,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
       };
       const progress=(id,label,status='running',detail='')=>{const step={id,label,status,...(detail?{detail}:{})};steps.set(id,step);emit({type:'progress',...step});};
       const finishSteps=status=>{for(const step of [...steps.values()])if(step.status==='running')progress(step.id,step.label,status,step.detail);};
-      let eventQueue=Promise.resolve(),queuedBytes=0,firstAnswer=true;
+      let eventQueue=Promise.resolve(),toolQueue=Promise.resolve(),queuedBytes=0,firstAnswer=true;
       const responseEvent=event=>{
         // Explicit user-visible answer allowlist: never pass raw provider/reasoning payloads.
         if(!event||!['delta','message'].includes(event.type)||typeof event.text!=='string'||event.phase&&!['final','response','answer','final_answer'].includes(event.phase))return;
@@ -203,9 +227,17 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
           await checkAccess(true);progress('prepare','准备业务数据');
           // Stop stalled inference promptly after platform revocation, even without tool events.
           policyTimer=setInterval(()=>{checkAccess(true).catch(error=>controller.abort(error));},1000);
-          const data=await abortable(loadData(env.DB,principal),signal),sources=new Map(),images=new Map();let toolsUsed=0;
+          // Business reads share a session for read-after-write consistency.
+          // Authentication and revocation checks retain the original primary DB.
+          const businessDB=env.DB.withSession?env.DB.withSession('first-primary'):env.DB;
+          const data=await abortable(loadData(businessDB,principal),signal),sources=new Map(),images=new Map();let toolsUsed=0;
+          const mutations=new Map(),proposals=new Map();
+          const actions=requestId?createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data,readPolicy:()=>getPolicy(env,principal.tenantId),checkAccess:()=>checkAccess(true),onMutation:mutation=>{mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});},onProposal:proposal=>{proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}}):null;
+          const completedActions=actions?await actions.receipts():[];
+          for(const mutation of completedActions){mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});}
+          for(const proposal of actions?await actions.proposals():[]){proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}
           await checkAccess(true);progress('prepare','准备业务数据','done','已确认当前厨房的数据范围');progress('model','理解问题');
-          const execute=async(name,args)=>{
+          const executeTool=async(name,args)=>{
             signal.throwIfAborted();
             if(++toolsUsed>12)fail('本轮查询次数已达上限，请缩小问题范围。');
             // Recheck the platform entitlement and identity before every data/tool operation.
@@ -218,23 +250,33 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
               if(name===flowVisualTool.name) {
                 const image=await store.createArtifact(principal,args);await checkAccess(true);
                 images.set(image.id,image);emit({type:'image',image});result={image,images:[image]};
+              } else if(name===FLOW_ADDRESS_TOOL.name)result=findFlowAddresses(args);
+              else if(isFlowWriteTool(name)) {
+                if(!actions)fail('请刷新页面后重新发送操作。');
+                result=await actions.execute(name,args);
               } else result=await runFlowTool(data,name,args);
             } catch(error) {progress(stepId,label,'error','这一步未完成');emit({type:'tool',name,label,status:'error'});throw error;}
             await checkAccess(true);
             const total=result.data?.total;
-            const detail=result.image?'图片已生成':name==='flow_catalogue_summary'?`已汇总 ${result.data.total} 个商品、${result.data.categoryCount} 个类别`:Number.isInteger(total)&&total>=0?`找到 ${total} 条记录`:name==='flow_business_summary'?'已按完整历史计算':name==='flow_get_record'?'已读取记录详情':'';
-            progress(stepId,label,'done',detail);progress('model','整理查询结果');
+            const detail=result.data?.requiresConfirmation?'已准备，等待用户确认':result.mutation?(result.data.replayed?'已核对先前保存结果':'已保存'):result.image?'图片已生成':name==='flow_catalogue_summary'?`已汇总 ${result.data.total} 个商品、${result.data.categoryCount} 个类别`:Number.isInteger(total)&&total>=0?`找到 ${total} 条记录`:name==='flow_business_summary'?'已按完整历史计算':name==='flow_get_record'?'已读取记录详情':'';
+            progress(stepId,label,'done',detail);progress('model','整理处理结果');
             for(const source of result.sources||[])sources.set(source.type+':'+source.id,source);
             emit({type:'tool',name,label,status:'done',count:result.sources?.length||0});emit({type:'sources',sources:[...sources.values()].slice(0,20)});
             return result;
           };
-          await abortable(provider.chat({principal,message,history,model,systemPrompt:buildFlowSystemPrompt({index:data.index,context}),toolDefinitions:[...flowToolDefinitions,flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
-          await eventQueue;await checkAccess(true);emit({type:'sources',sources:[...sources.values()].slice(0,20)});finishSteps('done');emit({type:'done',model,images:[...images.values()],steps:[...steps.values()]});
+          // Serialize model tools so a subsequent query sees earlier writes,
+          // including SDKs that request multiple tool calls concurrently.
+          const execute=(name,args)=>{const pending=toolQueue.then(()=>executeTool(name,args));toolQueue=pending.catch(()=>{});return pending;};
+          await abortable(provider.chat({principal,message,history,model,systemPrompt:buildFlowSystemPrompt({index:data.index,context,writesEnabled:!!actions,completedActions,preparedActions:[...proposals.values()]}),toolDefinitions:[...flowToolDefinitions,FLOW_ADDRESS_TOOL,...(actions?FLOW_WRITE_TOOLS:[]),flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
+          await toolQueue;await eventQueue;await checkAccess(true);emit({type:'sources',sources:[...sources.values()].slice(0,20)});finishSteps('done');emit({type:'done',model,images:[...images.values()],mutations:[...mutations.values()],proposals:[...proposals.values()],steps:[...steps.values()]});
         } catch(error) {
           if(!signal.aborted){finishSteps('error');emit({type:'error',message:cleanError(error)});}
           else if(!consumerCancelled&&!request.signal.aborted)emit({type:'error',message:signal.reason?.publicError?cleanError(signal.reason):signal.reason?.name==='QuotaExceededError'?'回复内容过长，请缩小范围后重试。':'本次查询超时，请缩小范围后重试。'},true);
         } finally {
           clearTimeout(timer);clearInterval(policyTimer);request.signal.removeEventListener('abort',cancel);
+          // A disconnect cannot release the lease while an already-issued D1
+          // write is still committing. Its durable receipt supports safe retry.
+          await toolQueue;
           try{await release();}catch{/* Expiring lease cannot outlive its fixed budget. */}
           closed=true;try{output.close();}catch{}
         }
@@ -246,7 +288,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
     },
     async cancel() {
       consumerCancelled=true;controller.abort();clearTimeout(timer);clearInterval(policyTimer);request.signal.removeEventListener('abort',cancel);
-      const cleanup=release().catch(()=>{});ctx?.waitUntil?.(cleanup);await cleanup;
+      // The task's finally block releases the lease after its current tool settles.
     },
   });
   return new Response(stream,{headers:{...securityHeaders,'Content-Type':'application/x-ndjson; charset=utf-8'}});

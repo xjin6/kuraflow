@@ -63,14 +63,16 @@
 .accounts-login .account-activation-identity { margin:22px 0; padding:14px 0; border-top:1px solid var(--ui-border); border-bottom:1px solid var(--ui-border); display:grid; gap:7px; font-size:13px; }
 .account-preview-link { display:block; color:#c6d5df; font-size:11px; margin:10px 0; text-decoration:none; }
 @media(max-width:720px){.accounts-summary {gap:35px}.accounts-context,.accounts-scope {flex-wrap:wrap;gap:12px}.accounts-context {align-items:flex-start}.accounts-table .section-header {flex-wrap:wrap;gap:12px}.accounts-search {width:100%}.accounts-scope .ui-select {width:180px}.accounts-actions .btn {min-height:36px;height:36px}.accounts-login .input {font-size:16px}}
-.account-login-tabs { display:flex; gap:22px; margin:20px 0 24px; }
+.account-login-methods { min-height:44px; margin:20px 0 24px; }
+.account-login-tabs { display:flex; gap:22px; margin:0; }
 .account-login-tabs .tab { flex:1; font-size:14px; padding:10px 0 13px; }
 .cloud-login .account-login-fields { display:grid; grid-template-rows:repeat(2,minmax(71px,auto)); align-content:start; gap:14px; }
-.cloud-login .account-login-fields-single { grid-template-rows:minmax(71px,auto); margin-top:26px; }
 .cloud-login .account-login-fields > .field { margin:0; }
 .cloud-login .account-login-fields .field label { line-height:20px; margin-bottom:7px; }
 .cloud-login .account-login-fields .input { min-height:44px; }
-.cloud-login.accounts-login > .form-hint { min-height:40px; margin:16px 0 0; }
+.account-login-footer { min-height:40px; margin-top:16px; }
+.accounts-login .account-login-footer > .form-hint, .accounts-login .account-login-footer > .accounts-login-links { min-height:40px; margin:0; }
+.accounts-login .account-login-footer > .accounts-login-links { align-items:flex-start; }
 .account-master-input { font-family:var(--font-data); letter-spacing:.06em; }
 .account-master-code-row { display:flex; gap:8px; align-items:center; }
 .account-master-code-row input { font-size:19px; width:100%; min-width:0; }
@@ -220,3 +222,34 @@
   .accounts-team-tools { gap:8px; }
 }
 @media(max-width:560px){.avatar-editor-identity {gap:12px}.avatar-editor-preview {width:62px;height:62px}.avatar-editor-actions .btn,.avatar-crop-actions .btn {min-height:38px}.accounts-context .accounts-organization {width:100%}.customer-account-person .account-avatar {width:30px;height:30px}.customer-account-person .account-person-cell {gap:8px}}
+
+/* Directory cards reuse .stores-grid and .store-card from management. */
+.accounts-directory-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; min-height:40px; }
+.accounts-directory-toolbar .section-title { margin:0; }
+.accounts-list-tools { display:flex; align-items:center; gap:12px; min-width:0; }
+.accounts-list-tools .accounts-search { width:240px; }
+.accounts-view-switch { flex:none; }
+.accounts-view-switch button { cursor:pointer; }
+.accounts-filter-slot[inert] { visibility:hidden; }
+.directory-name-link { padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.directory-name-link:hover { color:var(--ui-accent); }
+.directory-name-link:focus-visible { outline:2px solid var(--ui-accent); outline-offset:3px; border-radius:3px; }
+.platform-directory-grid > .accounts-empty { grid-column:1 / -1; }
+.platform-directory-grid .store-card-tools > .icon-button { width:32px; height:32px; }
+.platform-directory-grid .store-card-tools > .icon-button svg { width:16px; height:16px; }
+.platform-directory-grid .store-card-heading > .account-status { flex:none; }
+.accounts-store-detail-modal { width:900px; max-width:calc(100vw - 32px); }
+.accounts-store-detail .customer-store { border:0; box-shadow:none; padding:0; margin:0; background:none; }
+.platform-store-list.is-list .customer-store { padding:12px 16px 6px; margin-bottom:8px; }
+.platform-store-list.is-list .customer-store-heading { margin-bottom:10px; }
+.platform-store-list.is-list .customer-store-image { width:40px; height:40px; }
+.platform-store-list.is-list .customer-store-details { grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px 18px; margin-bottom:8px; }
+.platform-store-list.is-list .customer-account-row { padding-block:8px; }
+@media(max-width:720px) {
+  .accounts-directory-toolbar { display:grid; grid-template-columns:1fr; gap:12px; }
+  .accounts-list-tools { width:100%; }
+  .accounts-list-tools .accounts-search { flex:1; width:0; min-width:0; }
+  .platform-store-list.is-list .customer-store-details { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .platform-store-filters { display:flex; flex-wrap:nowrap; width:100%; overflow-x:auto; min-height:42px; scrollbar-width:none; }
+  .platform-store-filters > * { flex:none; }
+}

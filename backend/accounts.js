@@ -59,6 +59,21 @@ export async function getIdentity(request,env) {
   if(row.role!=='platform'){const org=await orgFor(env.DB,row.tenant_id);if(!orgAvailable(org)||(row.role==='store'&&!validStore(org,row.store_id)))return null;}
   return withIdentityAvatars(env.DB,identity(row));
 }
+// Trusted server-side predicate for a business write, including logout or suspension
+// racing the request's earlier authentication. No cookie or key reaches model tools.
+export async function accountMutationGuard(request,env,actor) {
+  const token=readCookie(request,deployment(request,env));
+  if(!/^[a-f0-9]{64}$/.test(token||''))fail('登录已过期，请重新登录。',401);
+  return {
+    sql:`EXISTS(SELECT 1 FROM account_sessions s JOIN staff_accounts a ON a.id=s.account_id
+      JOIN organizations o ON o.tenant_id=a.tenant_id WHERE s.hash=? AND s.expires>CAST(strftime('%s','now') AS INTEGER)
+      AND s.version=a.version AND a.id=? AND a.version=? AND a.role=? AND a.account_role=?
+      AND a.tenant_id IS ? AND a.store_id IS ? AND a.status='active'
+      AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=a.id)
+      AND o.active=1 AND (o.expires_on IS NULL OR o.expires_on>=date('now','+9 hours')))`,
+    params:[await hashToken(token),actor.userId,actor.version??0,actor.role,actor.accountRole,actor.tenantId??null,actor.storeId??null],
+  };
+}
 async function allowedScope(db,actor,body) {
   if(actor.role==='platform')requirePlatformOwner(actor);
   if(actor.role!=='platform'&&actor.accountRole!=='owner')fail('仅负责人可以管理员账号。',403);
@@ -73,17 +88,17 @@ async function ensureOrganization(db,tenantId) {
   await db.prepare("INSERT OR IGNORE INTO organizations(tenant_id,code,plan,admin_limit,store_limit,created_at) VALUES(?,?,'标准版',3,3,?)").bind(tenantId,'ORG-'+crypto.randomUUID(),now()).run();
   return orgFor(db,tenantId);
 }
-export async function ensureMaster(db,env,tenantId,storeId=null,details={}) {
+export async function ensureMaster(db,env,tenantId,storeId=null,details={}, {includeCode=true}={}) {
   const org=await ensureOrganization(db,tenantId),store=storeId?validStore(org,storeId):null;if(storeId&&!store)fail('门店不存在或已停用。',404);
   for(let attempt=0;attempt<4;attempt++) {
     const existing=await db.prepare("SELECT a.*,k.key_cipher FROM staff_accounts a LEFT JOIN account_keys k ON k.account_id=a.id WHERE a.tenant_id=? AND a.store_id IS ? AND a.account_role='owner'").bind(tenantId,storeId).first();
-    if(existing?.key_cipher)return {account:(await withAccountAvatars(db,[publicAccount(existing)]))[0],masterCode:await decryptCode(env,existing,existing.key_cipher)};
+    if(existing?.key_cipher)return {account:(await withAccountAvatars(db,[publicAccount(existing)]))[0],...(includeCode?{masterCode:await decryptCode(env,existing,existing.key_cipher)}:{})};
     const account=existing||{id:crypto.randomUUID(),tenant_id:tenantId,store_id:storeId,role:storeId?'store':'admin',account_role:'owner',name:details.name||store?.contact||'厨房负责人',contact:details.contact||store?.phone||'',version:0,created_at:now()};
     const code=await legacyStoreCode(db,env,tenantId,storeId)||generateMasterCode(),cipher=await encryptCode(env,account,code),statements=[];
     if(existing)statements.push(db.prepare("UPDATE staff_accounts SET status='active',password_hash=NULL,version=version+1 WHERE id=? AND version=? AND NOT EXISTS(SELECT 1 FROM account_keys WHERE account_id=?)").bind(account.id,account.version,account.id),guard(db));
     else statements.push(db.prepare("INSERT INTO staff_accounts(id,login_id,tenant_id,store_id,role,account_role,name,contact,status,created_at) VALUES(?,?,?,?,?,'owner',?,?,'active',?)").bind(account.id,'master:'+account.id,tenantId,storeId,account.role,account.name,account.contact,account.created_at));
     statements.push(db.prepare("INSERT INTO account_keys(account_id,kind,key_hash,key_cipher,created_at) VALUES(?,'master',?,?,?)").bind(account.id,await hashToken(code),cipher,now()),db.prepare('DELETE FROM account_sessions WHERE account_id=?').bind(account.id),db.prepare('DELETE FROM account_invites WHERE account_id=?').bind(account.id));
-    try{await db.batch(statements);return {account:publicAccount({...account,status:'active'}),masterCode:code};}catch(error){if(/UNIQUE|CHECK constraint/.test(error.message))continue;throw error;}
+    try{await db.batch(statements);return {account:publicAccount({...account,status:'active'}),...(includeCode?{masterCode:code}:{})};}catch(error){if(/UNIQUE|CHECK constraint/.test(error.message))continue;throw error;}
   }
   fail('负责人码生成冲突，请重试。',409);
 }

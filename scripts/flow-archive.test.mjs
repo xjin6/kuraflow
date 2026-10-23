@@ -7,6 +7,20 @@ import {createFlowArchive,flowActorKey,sanitizeFlowSVG,safeFlowImage} from './fl
 const actor={role:'admin',tenantId:'kitchen-a',userId:'owner-a'};
 const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><rect width="800" height="500" fill="#fff"/><text x="40" y="60" font-size="24">库存概览</text></svg>';
 async function fixture(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'flow-archive-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));return {dir,store:createFlowArchive({privateDir:dir})};}
+test('local archive retains pending confirmation cards across restart without executable commands',async t=>{
+ const {dir,store}=await fixture(t),requestId=crypto.randomUUID();
+ const proposal={id:crypto.randomUUID(),requestId,operation:'flow_create_task',label:'新增待办',recordLabel:'事项',status:'pending',details:[{label:'截止日期',value:'2026-12-01'}],impact:'确认后保存',command_json:'forged-command'};
+ const saved=await store.save(actor,{messages:[{role:'user',text:'新增待办',requestId},{role:'assistant',text:'请确认',proposals:[proposal]}]});
+ const restored=await createFlowArchive({privateDir:dir}).get(actor,saved.id);
+ assert.equal(restored.messages[1].proposals[0].id,proposal.id);assert.equal(restored.messages[1].proposals[0].status,'pending');assert.doesNotMatch(JSON.stringify(restored),/forged-command/);
+});
+test('local archive preserves request IDs and write receipts for a later reconnect',async t=>{
+ const {dir,store}=await fixture(t),requestId=crypto.randomUUID();
+ const mutation={id:`flow:${requestId}:flow_create_task:${'c'.repeat(64)}`,operation:'flow_create_task',label:'新增待办',recordId:'todo-test',recordLabel:'测试待办',href:'/?page=tasks&tab=manual',revision:1,status:'saved'};
+ const saved=await store.save(actor,{messages:[{role:'user',text:'新增待办',requestId},{role:'assistant',text:'已保存',mutations:[mutation]}]});
+ const restored=await createFlowArchive({privateDir:dir}).get(actor,saved.id);
+ assert.equal(restored.messages[0].requestId,requestId);assert.equal(restored.messages[1].mutations[0].recordId,'todo-test');
+});
 test('conversation history survives restart and isolates tenant and individual management user',async t=>{
  const {dir,store}=await fixture(t),row=await store.save(actor,{messages:[{role:'user',text:'查看库存'},{role:'assistant',text:'已查询',steps:[{id:'prepare',label:'准备业务数据',status:'done'},{id:'private-reasoning',label:'not a public step',status:'done'}],sources:[{title:'商品',url:'/?page=catalogue'},{title:'恶意',url:'javascript:alert(1)'}]}],draft:'下一个问题'});
  const reloaded=createFlowArchive({privateDir:dir});assert.equal((await reloaded.get(actor,row.id)).draft,'下一个问题');assert.equal((await reloaded.list(actor)).conversations[0].title,'查看库存');

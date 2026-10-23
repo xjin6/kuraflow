@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {JSDOM} from 'jsdom';
+import {cleanFlowMutation,cleanFlowProposal} from '../backend/flow-content.js';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const LIMIT=100;
@@ -17,7 +18,7 @@ export function safeFlowImage(value) {
 const safeHref=value=>{
   if(typeof value!=='string'||!value.startsWith('/?'))return null;
   const u=new URL(value,'https://kuraflow.invalid');
-  if(!['overview','orders','catalogue','stores','documents'].includes(u.searchParams.get('page'))||[...u.searchParams.keys()].some(k=>!['page','order','store','product','tab','month','from','to','range','demo'].includes(k)))return null;
+  if(!['overview','orders','catalogue','stores','documents','tasks'].includes(u.searchParams.get('page'))||[...u.searchParams.keys()].some(k=>!['page','order','store','product','tab','month','from','to','range','demo'].includes(k)))return null;
   return u.pathname+u.search;
 };
 function messages(input) {
@@ -26,7 +27,11 @@ function messages(input) {
   return input.map(row=>{
     if(!row||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||row.text.length>40000)fail('对话内容格式不正确。');
     return {role:row.role,text:row.text,
+      ...(row.role==='user'&&typeof row.requestId==='string'&&UUID.test(row.requestId)?{requestId:row.requestId}:{}),
       ...(row.role==='assistant'?{
+        ...(row.pending===true?{pending:true}:{}),
+        ...(Array.isArray(row.mutations)?{mutations:row.mutations.slice(0,6).map(cleanFlowMutation).filter(Boolean)}:{}),
+        ...(Array.isArray(row.proposals)?{proposals:row.proposals.slice(0,6).map(cleanFlowProposal).filter(Boolean)}:{}),
         steps:(Array.isArray(row.steps)?row.steps:[]).slice(0,24).flatMap(step=>/^(?:prepare|model|answer|tool-\d{1,2})$/.test(step?.id)&&['running','done','error','stopped'].includes(step.status)?[{id:step.id,label:clip(step.label,80),status:step.status,...(step.detail?{detail:clip(step.detail,160)}:{})}]:[]),
         tools:(Array.isArray(row.tools)?row.tools:[]).slice(0,24).map(t=>({label:clip(typeof t==='string'?t:t?.label||t?.name,100)})),
         sources:(Array.isArray(row.sources)?row.sources:[]).slice(0,30).flatMap(s=>{const href=safeHref(s?.href||s?.url);return href?[{label:clip(s.label||s.title,160)||'查看记录',href}]:[];}),

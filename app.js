@@ -1,4 +1,5 @@
 import {createAccountsUI} from './accounts-ui.js';
+import {setPortalIcon} from './portal-icon.js';
 import {createFlowUI} from './flow-ui.js';
 import {createNotificationsUI} from './notifications-ui.js';
 import {createLocalNotifications} from './local-notifications.js';
@@ -24,6 +25,7 @@ const uiMotion = createUIMotion(app);
 const pageParams = new URLSearchParams(location.search);
 const clientPortal = !isCloud && pageParams.get('view') === 'client';
 const initialClient = isCloud ? principal?.role === 'store' : clientPortal;
+setPortalIcon(initialClient ? 'store' : 'kitchen');
 const clientSessionKey = 'kuraflow-preview-store-session';
 let localClientCode = '';
 try { if (clientPortal) localClientCode = sessionStorage.getItem(clientSessionKey) || ''; } catch { /* Preview login can stay in memory. */ }
@@ -907,6 +909,7 @@ const flowUI = createFlowUI({
   enabled:isCloud && principal?.role === 'admin' && window.__KURAFLOW_FLOW_ENABLED__ === true,
   principal,
   getContext:() => ({page:ui.page, orderId:ui.orderId || undefined, storeId:ui.page === 'stores' ? ui.quoteStore : undefined, date:ui.date}),
+  onBusinessChange:()=>window.dispatchEvent(new Event('kuraflow-flow-data-changed')),
   onOpen:() => {ui.mobile = false; app.querySelector('.app-shell')?.classList.remove('mobile-open');},
   onNavigate:url => {
     const query=new URL(url,location.origin).searchParams,page=query.get('page');
@@ -922,7 +925,7 @@ render();notificationsUI.refresh();
 if(pageParams.get('flow')==='1')flowUI.open();
 
 if (isCloud) {
-  let expired = false, refreshing = false;
+  let expired = false, refreshing = false, flowRefreshPending = false;
   window.addEventListener('kuraflow-session-expired', () => {
     if (expired) return;
     expired = true; model.save();
@@ -937,11 +940,11 @@ if (isCloud) {
   async function refreshCloudState() {
     if (expired || refreshing || document.hidden || model.pending || overlay.firstChild || document.querySelector('.ui-calendar, .ui-select-menu') || app.querySelector('[data-packing-saving]')) return;
     if ([...document.querySelectorAll('.inline-editor-feedback')].some(el => el.textContent === '未保存')) return;
-    refreshing = true;
+    refreshing = true; flowRefreshPending = false;
     try {
       if (await model.refresh()) {
         syncClientIdentity(); syncNotificationBadge();
-        if (document.activeElement?.matches('input, textarea, select, .ui-select-trigger')) ui.cloudRefreshPending = true;
+        if (app.contains(document.activeElement) && document.activeElement?.matches('input, textarea, select, .ui-select-trigger')) ui.cloudRefreshPending = true;
         else if (ui.orderId) updatePacking(ui.orderId, true); else render();
       }
       const status = document.querySelector('#cloud-sync-status');
@@ -949,12 +952,14 @@ if (isCloud) {
     } catch {
       const status = document.querySelector('#cloud-sync-status');
       if (status) { status.textContent = '连接中断，正在重试'; status.classList.add('cloud-reconnect'); }
-    } finally { refreshing = false; }
+    } finally { refreshing = false; if (flowRefreshPending) void refreshCloudState(); }
   }
   setInterval(refreshCloudState, 30000);
   window.addEventListener('online', refreshCloudState);
+  window.addEventListener('kuraflow-flow-data-changed', () => {flowRefreshPending = true; void refreshCloudState();});
   window.addEventListener('focus', refreshCloudState);
   document.addEventListener('focusout', () => setTimeout(() => {
+    if (flowRefreshPending) void refreshCloudState();
     if (ui.cloudRefreshPending && !expired && !hasLocalDraftEditor() && !document.activeElement?.matches('input, textarea, select, .ui-select-trigger')) {
       if (ui.orderId) { ui.cloudRefreshPending = false; updatePacking(ui.orderId, true); } else render();
     }

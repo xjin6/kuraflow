@@ -1,3 +1,4 @@
+import {flowToolFailure} from './flow-schema.js';
 // Worker-native Copilot transport. All credentials belong to the current kitchen
 // and stay in the encrypted store; this module never starts a local runtime.
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
@@ -170,7 +171,7 @@ export function createFlowProvider({store, fetchImpl = fetch, now = Date.now, re
   async function status(principal, {refresh = false} = {}) {
     scope(principal);
     const current = await store.getConnection(principal), data = current?.data;
-    const base = {provider:'copilot', connection:'direct', connectionLabel:'GitHub Copilot', available:true, mode:'read-only', configured:false, connected:false, models:[], model:'', modelSource:'github-copilot', cacheState:'stale', stale:false};
+    const base = {provider:'copilot', connection:'direct', connectionLabel:'GitHub Copilot', available:true, mode:'read-write', configured:false, connected:false, models:[], model:'', modelSource:'github-copilot', cacheState:'stale', stale:false};
     if (!safeGitHubToken(data?.githubToken)) return base;
     const connectedBase = {...base, configured:true, login:String(data.login || '').slice(0,80), model:data.model || ''};
     const cached = await store.getModelCatalogue(principal, current.version);
@@ -341,7 +342,7 @@ export function createFlowProvider({store, fetchImpl = fetch, now = Date.now, re
           catch (error) {
             checkAbort(clock.signal);
             if ([401,403].includes(error?.status)) throw problem('FLOW_FORBIDDEN', '登录状态已变更，请重新登录。', 403);
-            output = JSON.stringify({error:'站内查询失败，本次没有取得该结果。不要猜测或补造数据。'});
+            output = JSON.stringify(flowToolFailure(error));
           }
           checkAbort(clock.signal);
           if (typeof output !== 'string' || output.length > 240000) throw problem('FLOW_INVALID_INPUT', '本次查询结果过大，请缩小范围。', 400);

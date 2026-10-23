@@ -463,7 +463,14 @@ function projectResult(result, principal, type) {
   return clone(result ?? null);
 }
 
-export async function executeCommand(db, principal, command) {
+// Validate against a disposable model using the same constraints as a real write.
+export function previewCommand(state, principal, command) {
+  principalScope(principal);validateCommand(principal,command);
+  try { return applyCommand(modelFor(clone(state)),principal,command); }
+  catch(error) { if(error instanceof RepositoryError)throw error;reject(error.message||'操作参数不正确。'); }
+}
+
+export async function executeCommand(db, principal, command, {expectedRevision,writeGuard,beforeCommit,commitStatements=[]} = {}) {
   principalScope(principal);
   validateCommand(principal, command);
   const hash = await requestHash(command);
@@ -473,10 +480,12 @@ export async function executeCommand(db, principal, command) {
     if (prior) {
       if (principal.role === 'store' && prior.store_id !== principal.storeId) reject('无权重放此请求。', 403, 'FORBIDDEN');
       if (prior.request_hash !== hash) reject('同一个请求编号不能用于不同操作。', 409, 'IDEMPOTENCY_CONFLICT');
+      await beforeCommit?.();
       const snapshot = await getState(db, principal);
       return { result: projectResult(JSON.parse(prior.result_json), principal, command.type), ...snapshot, replayed: true };
     }
     const { state: previous, revision } = await loadState(db, principal.tenantId);
+    if (expectedRevision != null && revision !== expectedRevision) reject('业务资料已更新，请重新查询后再修改。',409,'WRITE_CONFLICT');
     if (principal.role === 'store' && !previous.stores.some(store => store.id === principal.storeId && !store.deletedAt)) reject('门店账号未关联有效门店。', 403, 'STORE_NOT_FOUND');
     const next = clone(previous);
     const model = modelFor(next);
@@ -497,7 +506,9 @@ export async function executeCommand(db, principal, command) {
     const coreJson = json(boundedCore(next));
     if (new TextEncoder().encode(coreJson).byteLength > 1500000) reject('公司资料超过当前容量，请联系管理员归档。', 409, 'CAPACITY_LIMIT');
     const statements = [
-      db.prepare('UPDATE tenants SET core_json = ?, revision = revision + 1 WHERE id = ? AND revision = ?').bind(coreJson, principal.tenantId, revision),
+      // writeGuard is supplied only by trusted server callers, never read from command JSON.
+      db.prepare('UPDATE tenants SET core_json = ?, revision = revision + 1 WHERE id = ? AND revision = ?'+(writeGuard?' AND ('+writeGuard.sql+')':''))
+        .bind(coreJson, principal.tenantId, revision,...(writeGuard?.params||[])),
       db.prepare('INSERT INTO business_write_assertion (id, ok) VALUES (?, changes())').bind(guardId),
       ...(principal.accountRole ? [db.prepare('INSERT INTO account_audit(id,tenant_id,store_id,actor_id,actor_name,action,target_id,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),principal.tenantId,principal.storeId||null,principal.userId,principal.displayName,command.type,typeof result?.id==='string'?result.id:null,Math.floor(Date.now()/1000))] : []),
       ...entityStatements(db, principal.tenantId, {
@@ -519,8 +530,10 @@ export async function executeCommand(db, principal, command) {
       db.prepare('INSERT INTO command_idempotency (tenant_id, user_id, store_id, request_key, request_hash, result_json, revision, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(principal.tenantId, principal.userId, principal.role === 'store' ? principal.storeId : null, command.idempotencyKey, hash, json(result ?? null), revision + 1, now),
       db.prepare('DELETE FROM business_write_assertion WHERE id = ?').bind(guardId),
+      ...commitStatements,
     ];
     try {
+      await beforeCommit?.();
       await db.batch(statements);
       return { result: projectResult(result, principal, command.type), state: projectState(next, principal), revision: revision + 1, replayed: false };
     } catch (error) {

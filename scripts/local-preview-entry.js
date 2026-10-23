@@ -36,7 +36,7 @@
     form.querySelectorAll('.field').forEach(field => { field.hidden = true; field.style.display = 'none'; });
     const fields = form.querySelector('.account-login-fields');
     if (fields) { fields.hidden = true; fields.style.display = 'none'; }
-    document.querySelectorAll('.account-login-tabs, .accounts-login > .form-hint').forEach(el => { el.hidden = true; el.style.display = 'none'; });
+    document.querySelectorAll('.account-login-tabs, .accounts-login .form-hint').forEach(el => { el.hidden = true; el.style.display = 'none'; });
     const button = form.querySelector('[type="submit"]');
     button.textContent = '一键进入演示';
     form.addEventListener('submit', async event => {

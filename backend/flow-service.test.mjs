@@ -58,6 +58,12 @@ function harness(options={}) {
 }
 async function events(response){assert.equal(response.status,200);return (await response.text()).trim().split('\n').filter(Boolean).map(JSON.parse);}
 
+test('write request identifiers must be UUID strings and cannot be coerced from arrays or objects',async()=>{
+  const h=harness();
+  for(const requestId of ['',{},[crypto.randomUUID()],123,'not-a-request-id'])assert.equal((await h.handle(req('/chat',{message:'新增门店',requestId}))).status,400);
+  assert.equal(h.calls.chat,0);
+});
+
 test('Flow routes require current management identity, including reads and private artifacts',async()=>{
   const h=harness();assert.equal(await h.handle(new Request(ORIGIN+'/api/health')),null);
   for(const route of ['/status','/conversations','/artifacts/any-id'])for(const [auth,status] of [['none',401],['store',403],['platform',403],['store-id',403],['no-user',403]]) {
