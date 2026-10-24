@@ -1,0 +1,53 @@
+export function createPricingUI(ctx){
+  const {model,ui,escape:esc,icon,button,money,modal,closeOverlay,render,toast,managementHeading}=ctx;
+  const selected=()=>model.getQuotePlan(ui.quotePlanId)||model.getQuotePlans()[0]||null;
+  const field=(label,name,value,extra='')=>`<div class="field"><label for="pricing-${name}">${label}</label><input class="input" id="pricing-${name}" name="${name}" value="${esc(value??'')}" ${extra}></div>`;
+  const footer=text=>button('取消','close','secondary','type="button"')+`<button type="submit" class="btn btn-primary">${text}</button>`;
+  function picker(store){return `<button type="button" class="text-button quote-plan-picker" data-action="assign-store-plan" data-id="${esc(store.id)}" aria-label="选择${esc(store.name)}的报价方案">${esc(model.getStoreQuotePlan(store.id)?.name||'独立报价')}${icon('chevron')}</button>`;}
+  function selector(store){return `<select class="select quote-select" id="store-quote-plan" aria-label="报价方案" data-store="${esc(store.id)}" data-version="${store.quoteAssignmentVersion||0}"><option value="">独立报价</option>${model.getQuotePlans().map(plan=>`<option value="${esc(plan.id)}" ${store.quotePlanId===plan.id?'selected':''}>${esc(plan.name)}</option>`).join('')}</select>`;}
+  async function handleChange(input){
+    if(input.id!=='store-quote-plan')return false;
+    if(ui.role!=='admin')throw new Error('仅管理员可选择报价方案。');
+    const storeId=input.dataset.store,planId=input.value||null;input.disabled=true;
+    try{await model.setStoreQuotePlan(storeId,planId,Number(input.dataset.version));render();toast('报价方案已更新。');}
+    catch(error){render();toast(error.message||'保存失败，请重试。');}
+    finally{input.disabled=false;}
+    return true;
+  }
+  function page(){
+    if(ui.role!=='admin')throw new Error('仅管理员可管理报价。');const plans=model.getQuotePlans(),plan=selected(),products=model.getProducts(),list=products.filter(p=>(p.name+' '+p.spec+' '+(p.sku||'')).toLowerCase().includes((ui.query||'').toLowerCase()));
+    const members=plan?model.getStores().filter(s=>s.quotePlanId===plan.id):[];
+    return managementHeading('products','pricing',button('新建报价方案','new-quote-plan','primary','','plus'))+`<section class="section-card pricing-workspace"><div class="pricing-toolbar"><div class="tabs pricing-plan-tabs" role="tablist" aria-label="报价方案">${plans.map(p=>`<button type="button" class="tab ${plan?.id===p.id?'active':''}" role="tab" aria-selected="${plan?.id===p.id}" data-action="select-quote-plan" data-id="${esc(p.id)}">${esc(p.name)}<span>${model.getStores().filter(s=>s.quotePlanId===p.id).length} 店</span></button>`).join('')||'<strong>暂无报价方案</strong>'}</div><div class="pricing-plan-actions">${plan?`<button type="button" class="icon-button" data-action="rename-quote-plan" data-id="${esc(plan.id)}" aria-label="修改方案名称">${icon('edit')}</button>${button('关联门店 · '+members.length,'quote-plan-members','secondary',`data-id="${esc(plan.id)}"`,'store')}`:'<span>先创建一个报价方案</span>'}</div></div><div class="pricing-products-toolbar"><span>${products.length} 个商品</span><label class="search-box catalogue-search">${icon('search')}<input id="catalogue-search" aria-label="搜索商品" placeholder="搜索商品、规格" value="${esc(ui.query)}"></label></div><div class="table-scroll"><table class="pricing-table catalog-table"><thead><tr><th>商品 / 规格</th><th>单位</th><th>销售单价 / 税口径</th></tr></thead><tbody>${list.map(p=>`<tr><td><div class="product-table-cell">${p.image?`<img class="pricing-product-photo" src="${esc(p.image)}" alt="" loading="lazy">`:`<span class="pricing-product-photo pricing-product-placeholder">${icon('box')}</span>`}<div><button class="product-name-link" data-action="product-detail" data-id="${esc(p.id)}">${esc(p.name)}</button><span class="cell-secondary">${esc(p.spec)}</span></div></div></td><td colspan="2"><div class="pricing-unit-list">${model.getSaleUnits(p.id).map(({unit})=>{const q=plan?model.getQuotePlanPrice(plan.id,p.id,unit):{price:null};return `<div class="pricing-unit-row"><span>${esc(unit)}</span><button type="button" class="pricing-price" data-action="edit-plan-price" data-plan="${esc(plan?.id||'')}" data-id="${esc(p.id)}" data-unit="${esc(unit)}" ${plan?'':'disabled'} aria-label="设置${esc(p.name)}每${esc(unit)}的方案单价"><strong>${q.price===null?'未报价':money(q.price)}</strong><small>${q.price===null?'':q.taxBasis==='inclusive'?'含税':q.taxBasis==='exclusive'?'未税':'税口径未设置'}</small>${icon('edit')}</button></div>`;}).join('')}</div></td></tr>`).join('')||'<tr><td colspan="3" class="empty-state">暂无商品</td></tr>'}</tbody></table></div></section>`;
+  }
+  function planForm(id=''){
+    const plan=id?model.getQuotePlan(id):null;
+    modal(id?'修改方案名称':'新建报价方案',field('方案名称','name',plan?.name||'','required maxlength="40" placeholder="例如：标准报价、合作报价、团购报价"')+'<div class="inline-editor-feedback" role="alert"></div>',footer('保存'),'pricing-plan-form');
+    const form=document.getElementById('pricing-plan-form');form.dataset.id=id;form.dataset.version=plan?.version||0;
+  }
+  function storeForm(id){const store=model.getStore(id);if(!store||store.deletedAt)throw new Error('门店不存在。');
+    modal('选择报价方案',`<p class="pricing-form-title">${esc(store.name)}</p><div class="field"><label for="pricing-store-plan">报价方案</label><select class="input" id="pricing-store-plan" name="planId"><option value="">独立报价</option>${model.getQuotePlans().map(p=>`<option value="${esc(p.id)}" ${store.quotePlanId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div><p class="form-hint">选用方案后，新订单跟随方案价格；原独立报价保留，切回后恢复使用。</p><div class="inline-editor-feedback" role="alert"></div>`,footer('保存选择'),'pricing-store-form');
+    const form=document.getElementById('pricing-store-form');form.dataset.id=id;form.dataset.version=store.quoteAssignmentVersion||0;
+  }
+  function priceForm(el){const p=model.getProduct(el.dataset.id),plan=model.getQuotePlan(el.dataset.plan),unit=el.dataset.unit,q=model.getQuotePlanPrice(plan.id,p.id,unit),count=model.getStores().filter(s=>s.quotePlanId===plan.id).length;
+    modal('设置方案单价',`<p class="pricing-form-title">${esc(plan.name)} · ${esc(p.name)} / ${esc(unit)}</p>${field('销售单价（日元）','price',q.price,'type="number" min="0" step="any" placeholder="留空为未报价"')}<div class="form-grid"><div class="field"><label for="pricing-tax">税口径</label><select class="input" name="taxBasis" id="pricing-tax">${[['unspecified','未设置'],['inclusive','含税'],['exclusive','未税']].map(([v,n])=>`<option value="${v}" ${q.taxBasis===v?'selected':''}>${n}</option>`).join('')}</select></div>${field('税率（%，选填）','taxRate',q.taxRate==null?'':q.taxRate*100,'type="number" min="0" max="100" step="any"')}</div><p class="form-hint">保存后用于 ${count} 家关联门店的新订单。</p><div class="inline-editor-feedback" role="alert"></div>`,footer('保存单价'),'pricing-price-form');
+    const form=document.getElementById('pricing-price-form');Object.assign(form.dataset,{id:p.id,plan:plan.id,unit,version:plan.version});
+  }
+  function membersForm(id){const plan=model.getQuotePlan(id),stores=model.getStores();
+    modal('关联门店',`<p class="pricing-form-title">${esc(plan.name)}</p><div class="pricing-store-list">${stores.map(store=>`<label><input type="checkbox" name="stores" value="${esc(store.id)}" ${store.quotePlanId===id?'checked':''}><span><strong>${esc(store.name)}</strong><small>当前：${esc(model.getStoreQuotePlan(store.id)?.name||'独立报价')}</small></span></label>`).join('')||'<p>暂无门店</p>'}</div><p class="form-hint">选中门店改用此方案；取消已关联门店会切回独立报价，历史订单不变。</p><div class="inline-editor-feedback" role="alert"></div>`,footer('保存关联'),'pricing-members-form');
+    const form=document.getElementById('pricing-members-form');form.dataset.id=id;form.dataset.version=plan.version;form.dataset.versions=JSON.stringify(Object.fromEntries(stores.map(s=>[s.id,s.quoteAssignmentVersion||0])));
+  }
+  function costForm(id){const p=model.getProduct(id),cost=ctx.costFor?.(p)||{price:p.costPrice};modal('设置成本价',`<p class="pricing-form-title">${esc(p.name)} · ${esc(p.spec)}</p>${field('成本价（日元 / '+esc(p.unit)+'）','costPrice',cost.price,'type="number" min="0" step="any" placeholder="留空表示未设置"')}<div class="inline-editor-feedback" role="alert"></div>`,footer('保存成本价'),'pricing-cost-form');const form=document.getElementById('pricing-cost-form');form.dataset.id=id;form.dataset.version=p.costVersion||0;}
+  async function handleAction(action,el){if(!['new-quote-plan','rename-quote-plan','select-quote-plan','quote-plan-members','edit-plan-price','assign-store-plan','product-cost','open-quote-plan'].includes(action))return false;if(ui.role!=='admin')throw new Error('仅管理员可管理报价与成本。');
+    if(action==='new-quote-plan')planForm();else if(action==='rename-quote-plan')planForm(el.dataset.id);else if(action==='quote-plan-members')membersForm(el.dataset.id);else if(action==='edit-plan-price')priceForm(el);else if(action==='assign-store-plan')storeForm(el.dataset.id);else if(action==='product-cost')costForm(el.dataset.id);else{ui.quotePlanId=el.dataset.id;if(action==='open-quote-plan')ctx.nav('catalogue','pricing');else render();history.replaceState(null,'','?'+new URLSearchParams({page:'catalogue',tab:'pricing',plan:ui.quotePlanId}));}return true;
+  }
+  async function handleSubmit(form){if(!form.id.startsWith('pricing-'))return false;if(ui.role!=='admin')throw new Error('仅管理员可管理报价。');const values=Object.fromEntries(new FormData(form)),id=form.dataset.id,version=Number(form.dataset.version),error=form.querySelector('[role=alert]');
+    try{if(form.id==='pricing-plan-form'){if(id)await model.renameQuotePlan(id,values.name,version);else{const plan=await model.createQuotePlan(values.name);ui.quotePlanId=plan.id;}}
+      else if(form.id==='pricing-cost-form')await model.setProductCost(id,values.costPrice===''?null:Number(values.costPrice),version);
+      else if(form.id==='pricing-price-form')await model.setQuotePlanPrice(form.dataset.plan,id,form.dataset.unit,{price:values.price===''?null:Number(values.price),taxBasis:values.taxBasis,taxRate:values.taxBasis==='unspecified'||values.taxRate===''?null:Number(values.taxRate)/100},version);
+      else if(form.id==='pricing-store-form')await model.setStoreQuotePlan(id,values.planId||null,version);
+      else if(form.id==='pricing-members-form')await model.setQuotePlanMembers(id,new FormData(form).getAll('stores'),version,JSON.parse(form.dataset.versions));
+      closeOverlay();render();if(form.id==='pricing-plan-form'&&!id)document.querySelector('.pricing-plan-tabs .active')?.scrollIntoView?.({block:'nearest',inline:'nearest'});toast('已保存。');
+    }catch(failure){error.textContent=failure.message||'保存失败，请重试。';}return true;
+  }
+  return {page,picker,selector,handleChange,handleAction,handleSubmit};
+}

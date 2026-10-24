@@ -168,7 +168,7 @@ test('platform create intercepts a clobbered form ID and sends one JSON POST wit
   assert.match(document.querySelector('.account-handoff').textContent, /管理端/);
   assert.deepEqual([...document.querySelectorAll('.topbar-right a')].map(a => a.textContent), ['管理端', '门店端']);
   assert.equal(document.querySelector('[data-action="platform-kitchens"]').classList.contains('active'), true);
-  assert.equal(document.querySelector('.accounts-seat').textContent, '负责人独立 · 管理员 0 / 3');
+  assert.equal(document.querySelector('.accounts-seat').textContent, '负责人独立 · 管理员 0 人');
   assert.equal(window.location.href, originalUrl, 'private values must not become URL query parameters');
 });
 
@@ -225,11 +225,11 @@ for (const scenario of [
     assert.equal(document.querySelector('[data-action="platform-kitchens"]').classList.contains('active'), true);
     assert.equal(document.getElementById('accounts-tenant').value, kitchen.id);
     assert.ok(calls.some(call => call.path === '/api/team/list?tenant=tenant-test'));
-    assert.equal(document.querySelector('.accounts-seat').textContent, `负责人独立 · 管理员 ${scenario.used} / 3`);
+    assert.equal(document.querySelector('.accounts-seat').textContent, `负责人独立 · 管理员 ${scenario.used} 人`);
     assert.equal(document.querySelectorAll('tbody tr').length, 4, 'owner remains visible alongside three administrators');
     assert.match(document.querySelector('tbody tr').textContent, /负责人码登录/);
     assert.equal(document.querySelectorAll('[data-action="accounts-staff-edit"]').length, 3);
-    assert.equal(document.querySelector('[data-action="accounts-staff-new"]').disabled, scenario.used >= 3);
+    assert.equal(document.querySelector('[data-action="accounts-staff-new"]').disabled, false);
   });
 }
 

@@ -7,6 +7,7 @@ export function portalBrandColor(portal) {
 
 export function setPortalIcon(portal) {
   const color = portalBrandColor(portal);
+  document.documentElement.dataset.portalTheme = color;
   const base = `/public/brand/kuraflow-${color}`;
   for (const [id, rel, type, sizes, href] of [
     ['portal-icon-png', 'icon', 'image/png', '32x32', `${base}-32.png`],

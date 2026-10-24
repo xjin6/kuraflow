@@ -30,6 +30,7 @@ export function orderHasOpenIssue(order) {
 
 export function notificationStock(state, product) {
   if (!product || product.deletedAt || product.catalogueHidden) return null;
+  if(product.stockUnlimited)return null;
   const raw = Object.prototype.hasOwnProperty.call(state?.inventory || {}, product.id)
     ? state.inventory[product.id] : product.stock;
   if (raw === null || raw === undefined || raw === '' || !Number.isFinite(Number(raw))) return null;
@@ -97,6 +98,7 @@ export function notificationCurrentStatus(event, state) {
   if (event.targetType === 'product') {
     const product = rows(state?.products).find(row => row.id === event.productId || row.id === event.targetId);
     if (!product || product.deletedAt || product.catalogueHidden) return { label: '已归档', resolved: true };
+    if(product?.stockUnlimited)return {label:'无限库存',resolved:true};
     const stock = notificationStock(state, product);
     return stock === null ? { label: '库存待确认', resolved: false }
       : stock < 6 ? { label: '待补货', resolved: false } : { label: '库存已恢复', resolved: true };

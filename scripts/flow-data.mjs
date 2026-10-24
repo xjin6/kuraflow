@@ -74,7 +74,7 @@ function citation(kind, id, label, extra = {}) {
   if (kind === 'product') params.set('product', id);
   if (kind === 'store') { params.set('tab', 'stores'); params.set('store', id); }
   if (kind === 'quote') { params.set('tab', 'quotes'); params.set('store', extra.storeId); }
-  if (kind === 'cost') params.set('tab', 'costs');
+  if (kind === 'cost') params.set('tab', 'inventory');
   if (kind === 'task') params.set('tab','manual');
   if (kind === 'document' && extra.storeId) params.set('store', extra.storeId);
   return { id: `${kind}:${id}`, kind, recordId: id, label, href: '/?' + params.toString() };
@@ -93,19 +93,19 @@ function indexSnapshot(snapshot) {
     ...select(state.settings, ['cutoffTime', 'deliveryWindow', 'currency', 'language']),
   });
   for (const product of products.values()) {
-    const available = number(state.inventory?.[product.id]);
+    const available = product.stockUnlimited?null:number(state.inventory?.[product.id]);
     const reserved = (state.orders || []).filter(row => STAGES.slice(0, 4).includes(row.stage)).reduce((sum, row) =>
       sum + (row.items || []).filter(line => line.productId === product.id).reduce((n, line) => n + (number(line.baseQty ?? line.qty) || 0), 0), 0);
     add('product', product.id, product.name || product.id, {
-      ...select(product, ['id', 'name', 'familyName', 'category', 'unit', 'spec', 'description', 'temperature', 'deletedAt']),
+      ...select(product, ['id', 'name', 'familyName', 'category', 'unit', 'spec', 'description', 'temperature', 'deletedAt','costPrice','stockUnlimited']),
       saleUnits: (product.saleUnits || []).map(row => select(row, ['unit', 'perBase'])),
       saleUnitEquations: (product.saleUnitEquations || []).map(row => select(row, ['fromQty', 'fromUnit', 'toQty', 'toUnit'])),
-      inventory: { available, reserved, warehouse: available === null ? null : Number((available + reserved).toPrecision(15)), unit: product.unit,
+      inventory: { ...(product.stockUnlimited?{unlimited:true}:{}), available, reserved, warehouse: available === null ? null : Number((available + reserved).toPrecision(15)), unit: product.unit,
         allocations: [...stores.values()].map(store => ({ storeId: store.id, storeName: store.name, quantity: number(state.storeAllocations?.[store.id]?.[product.id]) })).filter(row => row.quantity !== null) },
     });
   }
   for (const store of stores.values()) add('store', store.id, store.name || store.id,
-    select(store, ['id', 'name', 'city', 'prefecture', 'municipality', 'ward', 'prefectureCode', 'municipalityCode', 'wardCode', 'addressDetail', 'address', 'phone', 'contact', 'route', 'deletedAt']));
+    select(store, ['id', 'name', 'city', 'prefecture', 'municipality', 'ward', 'prefectureCode', 'municipalityCode', 'wardCode', 'addressDetail', 'address', 'phone', 'contact', 'route', 'deletedAt','quotePlanId']));
   for (const task of state.manualTasks || []) add('task',task.id,task.title || task.id,
     select(task,['id','title','note','dueDate','source','createdAt','updatedAt','completedAt','deletedAt']));
   for (const order of state.orders || []) add('order', order.id, `${order.storeName || stores.get(order.storeId)?.name || '门店'} · ${order.id}`, {
@@ -120,9 +120,10 @@ function indexSnapshot(snapshot) {
   }, { storeId: document.storeId });
   for (const store of stores.values()) for (const product of products.values()) {
     const quotes = new Map();
-    const base = state.prices?.[store.id]?.[product.id], meta = state.quoteMeta?.[store.id]?.[product.id];
+    const plan=state.quotePlans?.find(p=>p.id===store.quotePlanId);
+    const base = plan?plan.quotes?.[product.id]?.[product.unit]?.price:state.prices?.[store.id]?.[product.id], meta = plan?plan.quotes?.[product.id]?.[product.unit]:state.quoteMeta?.[store.id]?.[product.id];
     if (base != null || meta) quotes.set(product.unit, quoteFields({ ...meta, price: base }));
-    for (const [unit, row] of Object.entries(state.unitQuotes?.[store.id]?.[product.id] || {})) quotes.set(unit, quoteFields(row));
+    for (const [unit, row] of Object.entries((plan?plan.quotes?.[product.id]:state.unitQuotes?.[store.id]?.[product.id]) || {})) quotes.set(unit, quoteFields(row));
     for (const [unit, quote] of quotes) {
       const id = `${store.id}|${product.id}|${unit}`;
       add('quote', id, `${store.name} · ${product.name} · ${unit}`, { storeId: store.id, storeName: store.name, productId: product.id, productName: product.name, unit, ...quote,
@@ -196,11 +197,13 @@ export function createFlowDataTools({ db, principal, loadSnapshot } = {}) {
       if(mode==='missing_price'){
         for(const store of stores)for(const product of products){
           const raw=snapshot.state.products.find(p=>p.id===product.id),units=raw.saleUnits?.length?raw.saleUnits:[{unit:raw.unit}];
-          const missing=units.filter(row=>number(row.unit===raw.unit?snapshot.state.prices?.[store.id]?.[product.id]:snapshot.state.unitQuotes?.[store.id]?.[product.id]?.[row.unit]?.price)===null).map(row=>row.unit);
+          const sourceStore=snapshot.state.stores.find(s=>s.id===store.id),plan=snapshot.state.quotePlans?.find(p=>p.id===sourceStore?.quotePlanId);
+          const missing=units.filter(row=>number(plan?plan.quotes?.[product.id]?.[row.unit]?.price:row.unit===raw.unit?snapshot.state.prices?.[store.id]?.[product.id]:snapshot.state.unitQuotes?.[store.id]?.[product.id]?.[row.unit]?.price)===null).map(row=>row.unit);
           if(missing.length)all.push({storeId:store.id,storeName:store.label,productId:product.id,productName:product.label,missingUnits:missing,allUnitsUnquoted:missing.length===units.length,source:citation('quote',store.id+'|'+product.id,store.label+' · '+product.label,{storeId:store.id})});
         }
       }else for(const product of products){
         const available=product.data.inventory.available;
+        if(product.data.inventory.unlimited)continue;
         if(mode==='unknown_stock'?available===null:available!==null&&available<=threshold)all.push({productId:product.id,productName:product.label,available,unit:product.data.unit,source:product.source});
       }
       return {...metadata(snapshot),mode,threshold:mode==='low_stock'?threshold:null,basis:mode==='low_stock'?'按各商品自己的基础库存单位比较阈值；未设置库存不当作零。':'按当前已保存数据核对；未报价单位不能在门店订货。',total:all.length,offset,nextOffset:offset+limit<all.length?offset+limit:null,results:all.slice(offset,offset+limit)};

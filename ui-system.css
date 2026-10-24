@@ -190,11 +190,12 @@ tbody tr:hover, .recycle-item:hover { background:var(--ui-subtle); }
 .modal-footer, .drawer-footer { padding:16px 24px; background:var(--ui-subtle); border-top:1px solid var(--ui-border); gap:8px; }
 
 /* Product identity, value and actions each have a stable column. */
-.warehouse-table { min-width:980px; table-layout:fixed; width:100%; }
-.catalogue-col-product { width:22%; }
-.catalogue-col-units { width:20%; }
-.catalogue-col-stock { width:19%; }
-.catalogue-col-metric { width:10%; }
+.warehouse-table { min-width:1000px; table-layout:fixed; width:100%; }
+.catalogue-col-product { width:20%; }
+.catalogue-col-cost { width:12%; }
+.catalogue-col-units { width:18%; }
+.catalogue-col-stock { width:17%; }
+.catalogue-col-metric { width:8%; }
 .catalogue-col-action { width:9%; }
 .warehouse-table th, .warehouse-table td, .store-quote-table th, .store-quote-table td { padding:18px; vertical-align:top; }
 .warehouse-table th, .warehouse-table td { padding-left:12px; padding-right:12px; }

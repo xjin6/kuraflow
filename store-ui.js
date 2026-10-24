@@ -1,3 +1,4 @@
+import {storeDirectoryCard,storeCardAddress} from './directory-card.js';
 import { PREFECTURES, getMunicipalities, getWards, resolveJapanAddress } from './japan-addresses.js';
 
 export function createStoreUI(ctx) {
@@ -19,7 +20,16 @@ export function createStoreUI(ctx) {
       });
     }));
     return ctx.managementHeading('stores', 'stores', button(personalAccounts?'新建门店':'新建门店账号', 'add-store', 'primary', '', 'plus')) +
-      `<div class="stores-grid">${stores.map(s => `<article class="store-card" data-store-card="${esc(s.id)}"><div class="store-card-heading">${storeAvatar(s)}<div class="store-card-identity"><h3>${esc(s.name)}</h3><span class="store-city">${esc([s.prefecture, s.municipality, s.ward].filter(Boolean).join(' · ') || s.city || '地址待补充')}</span></div><div class="store-card-tools">${isCloud&&ctx.canManageAccounts?`<button type="button" class="icon-button store-team-button" data-action="manage-store-team" data-id="${esc(s.id)}" aria-label="${esc(s.name)}的门店员工管理" title="门店员工管理">${icon('user')}</button>`:''}<span class="status-badge delivered"><i></i>已启用</span></div></div><div class="store-card-info"><div><span>联系人</span><strong>${esc(s.contact || '待填写')}</strong></div><div><span>联系电话</span><strong>${esc(s.phone || '待填写')}</strong></div><div><span>配送地址</span><strong>${esc(s.address || '待填写')}</strong></div>${canReadMaster && (s.accessCode || isCloud) ? `<div class="store-code-row"><span>负责人码</span><div class="store-code-control"><code class="store-code-value" data-store-code="${esc(s.id)}">${esc(s.accessCode || codeCache.get(s.id) || '加载中…')}</code>${copyIcon(s.id)}</div></div>` : ''}<div><span>合作订单</span><strong>${model.state.orders.filter(o => o.storeId === s.id).length} 笔</strong></div></div><div class="store-card-footer">${button('编辑', 'edit-store', 'secondary', `data-id="${esc(s.id)}"`, 'edit')}${button('结算', 'store-settlement', 'secondary', `data-id="${esc(s.id)}"`, 'wallet')}${button('报价', 'store-prices', 'secondary', `data-id="${esc(s.id)}"`, 'tag')}</div></article>`).join('') || '<div class="empty-state"><h3>暂无门店</h3></div>'}</div>`;
+      `<div class="stores-grid">${stores.map(s => storeDirectoryCard({
+        attributes:`data-store-card="${esc(s.id)}"`,
+        title:esc(s.name),
+        subtitle:esc(storeCardAddress(s)),
+        image:storeAvatar(s),
+        status:'<span class="status-badge delivered"><i></i>已启用</span>',
+        tools:'',
+        details:`<div><span>联系人</span><strong>${esc(s.contact || '待填写')}</strong></div><div><span>联系电话</span><strong>${esc(s.phone || '待填写')}</strong></div>${canReadMaster && (s.accessCode || isCloud) ? `<div class="store-code-row"><span>负责人码</span><div class="store-code-control"><code class="store-code-value" data-store-code="${esc(s.id)}">${esc(s.accessCode || codeCache.get(s.id) || '加载中…')}</code>${copyIcon(s.id)}</div></div>` : ''}<div><span>报价方案</span>${ctx.pricingPicker?.(s)||'<strong>独立报价</strong>'}</div><div><span>合作订单</span><strong>${model.state.orders.filter(o => o.storeId === s.id).length} 笔</strong></div>`,
+        actions:button('编辑', 'edit-store', 'secondary', `data-id="${esc(s.id)}"`, 'edit')+button('结算', 'store-settlement', 'secondary', `data-id="${esc(s.id)}"`, 'wallet')+button('报价', 'store-prices', 'secondary', `data-id="${esc(s.id)}"`, 'tag')
+      })).join('') || '<div class="empty-state"><h3>暂无门店</h3></div>'}</div>`;
   }
 
   function imageEditor(image) {

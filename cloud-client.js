@@ -113,7 +113,7 @@ export function createCloudModel(session) {
     pending.set(fingerprint, operation);
     return operation;
   };
-  for (const type of ['setWarehouseStock', 'setWarehouseUnitStock', 'setStoreUnitAllocation', 'setStoreAllocation', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setPrice', 'deleteStore', 'setStock', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'resolveOrderIssue', 'setStage', 'remindOrder', 'recordIssue', 'confirmDelivery', 'importProducts', 'deleteProduct', 'restoreProduct', 'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask']) {
+  for (const type of ['purgeManualTask','updateManualTask','reorderManualTasks','setProductCost','enableUnlimitedStock','createQuotePlan','renameQuotePlan','setQuotePlanPrice','setStoreQuotePlan','setQuotePlanMembers','setWarehouseStock', 'setWarehouseUnitStock', 'setStoreUnitAllocation', 'setStoreAllocation', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setPrice', 'deleteStore', 'setStock', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'resolveOrderIssue', 'setStage', 'remindOrder', 'recordIssue', 'confirmDelivery', 'importProducts', 'deleteProduct', 'restoreProduct', 'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask']) {
     model[type] = (...args) => model.command(type, args);
   }
   model.getStoreAccessCode = async storeId => (await cloudRequest('/api/admin/store-code',{storeId})).accessCode;

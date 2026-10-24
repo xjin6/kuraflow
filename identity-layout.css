@@ -1,0 +1,35 @@
+/* Identity sizing: preserve shell geometry and all existing account actions. */
+.sidebar .workspace-avatar { width:38px; height:38px; min-width:38px; font-size:16px; }
+.sidebar .workspace-avatar > .store-avatar { width:100%; height:100%; font-size:16px; }
+.sidebar .sidebar-profile .user-avatar { width:38px; height:38px; min-width:38px; flex:none; font-size:14px; }
+.sidebar .sidebar-profile > div:not(.user-avatar) { flex:1; min-width:0; }
+.sidebar .profile-entry { padding-left:0; padding-right:0; }
+.topbar .topbar-user { width:36px; height:36px; min-width:36px; font-size:13px; }
+.accounts-table .account-avatar { width:42px; height:42px; }
+.customer-account-person .account-avatar { width:38px; height:38px; font-size:14px; }
+
+/* Store photos use the existing free right-hand area, outside the text flow. */
+.store-identity-card { position:relative; --store-card-photo-size:140px; --store-card-photo-gap:14px; }
+.store-identity-card .store-card-media { position:absolute; top:20px; right:20px; width:var(--store-card-photo-size); height:var(--store-card-photo-size); }
+.store-identity-card .store-card-media > .store-avatar { display:grid; place-items:center; width:100%; height:100%; margin:0; border-radius:12px; font-size:28px; object-fit:cover; }
+.store-identity-card .store-card-media > img.store-avatar { display:block; }
+.store-identity-card .store-card-heading { align-items:flex-start; min-height:calc(var(--store-card-photo-size) - 32px); padding:20px calc(20px + var(--store-card-photo-size) + var(--store-card-photo-gap)) 16px 20px; }
+.store-identity-card .store-card-title-line { display:flex; align-items:flex-start; gap:4px; min-width:0; }
+.store-identity-card .store-card-title-line > h3 { flex:0 1 auto; min-width:0; max-width:100%; margin:0; }
+.store-identity-card .store-card-title-line > .status-badge,
+.store-identity-card .store-card-title-line > .account-status { flex:none; margin:0; align-self:flex-start; white-space:nowrap; }
+.store-identity-card .store-card-subline { min-width:0; margin-top:3px; }
+.store-identity-card .store-card-subline .store-city { display:block; min-width:0; min-height:0; margin:0; line-height:22px; overflow-wrap:anywhere; }
+.store-identity-card .store-card-subline .store-card-tools { margin:4px 0 0; }
+.store-identity-card .store-card-info > div:nth-child(-n+2) { padding-right:calc(var(--store-card-photo-size) + var(--store-card-photo-gap)); }
+.store-identity-card .store-card-info > .store-code-row { padding-right:0; }
+@container store-card (max-width:360px) {
+  .store-identity-card .store-card-media,
+  .store-identity-card .store-card-heading,
+  .store-identity-card .store-card-info { --store-card-photo-size:112px; --store-card-photo-gap:12px; }
+}
+@media(max-width:560px) {
+  .store-identity-card { --store-card-photo-size:120px; --store-card-photo-gap:12px; }
+  .store-identity-card .store-card-subline .store-team-link { min-height:32px; }
+  .customer-account-person .account-avatar { width:36px; height:36px; }
+}

@@ -28,12 +28,12 @@ await build({entryPoints:[path.join(root,'cloud-bootstrap.js'),path.join(root,'p
  html=html.replace('<script type="module" src="./portal-icon.js"></script>',`<script type="module" src="${iconScript}"></script>`);
  await fs.writeFile(path.join(target,'index.html'),html);
 });
-for(const file of ['styles.css','catalogue-units.css','store-ui.css','readability.css','ui-system.css','ui-controls.css','order-ui.css','visual-refresh.css','settlement.css','overview.css','accounts.css','flow-ui.css','notifications.css','flow-mark.svg','cloud.css','favicon.svg'])await fs.copyFile(path.join(root,file),path.join(target,file));
+for(const file of ['styles.css','catalogue-units.css','store-ui.css','readability.css','ui-system.css','ui-controls.css','order-ui.css','visual-refresh.css','settlement.css','overview.css','pricing-ui.css','accounts.css','flow-ui.css','notifications.css','portal-theme.css','sidebar-brand.css','identity-layout.css','flow-mark.svg','cloud.css','favicon.svg'])await fs.copyFile(path.join(root,file),path.join(target,file));
 await fs.cp(path.join(root,'public/product-images'),path.join(target,'public/product-images'),{recursive:true});
 await fs.cp(path.join(root,'public/fonts'),path.join(target,'public/fonts'),{recursive:true});
 await fs.mkdir(path.join(target,'public/brand'),{recursive:true});
 // Publish only the approved portal assets, not archived brand drafts.
-for(const color of ['blue','purple','orange'])for(const suffix of ['.svg','-32.png','-apple-touch.png','-kanji.svg','-english.svg']){
+for(const color of ['blue','purple','orange'])for(const suffix of ['.svg','-32.png','-apple-touch.png','-kanji.svg','-english.svg','-sidebar-kanji.svg','-sidebar-english.svg']){
  const file=`kuraflow-${color}${suffix}`;
  await fs.copyFile(path.join(root,'public/brand',file),path.join(target,'public/brand',file));
 }

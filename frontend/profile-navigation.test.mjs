@@ -64,17 +64,16 @@ test('management uses a list icon and the personal footer opens its own employee
   assert.ok(reads.length);assert.ok(reads.every(call=>!new URL(call.path,window.location.origin).searchParams.has('store')));
 });
 
-test('management owner enters a store team through store management and the footer resets to own team',async t=>{
-  const {document,calls}=await fixture(t,{url:'https://profile.example.test/?page=stores&tab=stores'});
-  const staff=document.querySelector('[data-action="manage-store-team"][data-id="store-a"]');assert.ok(staff);
+test('management store cards omit employee management while the personal footer remains available',async t=>{
+  const {document}=await fixture(t,{url:'https://profile.example.test/?page=stores&tab=stores'});
+  const card=document.querySelector('.store-card[data-store-card="store-a"]');assert.ok(card);
+  assert.equal(document.querySelector('[data-action="manage-store-team"][data-id="store-a"]'),null,'store cards do not expose employee management');
+  assert.equal(card.querySelector('.store-city').textContent,'大阪市テスト1-1');
+  assert.equal([...card.querySelectorAll('.store-card-info > div > span')].some(node=>node.textContent==='配送地址'),false);
   const footerActions=[...document.querySelectorAll('.store-card-footer [data-action]')].map(node=>node.dataset.action);
   assert.deepEqual(footerActions,['edit-store','store-settlement','store-prices']);
-  click(document,'[data-action="manage-store-team"][data-id="store-a"]');
-  await until(()=>calls.some(call=>call.path.includes('/api/team/list?')&&new URL(call.path,'https://profile.example.test').searchParams.get('store')==='store-a')&&document.querySelector('.accounts-table'));
-  assert.equal(document.querySelector('#accounts-store'),null);
-  click(document,'.sidebar-footer [data-action="open-own-team"]');
-  await until(()=>document.querySelector('.accounts-table')&&new URL(calls.filter(call=>call.path.startsWith('/api/team/list?')).at(-1).path,'https://profile.example.test').searchParams.get('store')===null);
-  assert.equal(document.querySelector('#accounts-store'),null);
+  assert.ok(document.querySelector('.sidebar-footer button[data-action="open-own-team"]'));
+  await nextTurn();
 });
 
 test('ordinary management members keep their personal entry without store staff or kitchen-avatar controls',async t=>{
@@ -82,7 +81,7 @@ test('ordinary management members keep their personal entry without store staff 
   assert.equal(document.querySelector('[data-action="manage-store-team"]'),null);
   assert.equal(document.querySelector('[data-action="organization-avatar"]'),null);
   assert.ok(document.querySelector('.sidebar-footer button[data-action="open-own-team"]'));
-  assert.ok(document.querySelector('.topbar button[data-action="open-own-team"]'));
+  assert.equal(document.querySelector('.topbar button[data-action="open-own-team"]'), null);
 });
 
 test('platform retains customer employee support and its personal footer opens an avatar editor',async t=>{

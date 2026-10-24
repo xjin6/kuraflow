@@ -9,11 +9,12 @@ const MAX_STORES = 200;
 const MAX_DOCUMENTS = 1000;
 const MAX_HISTORY = 200;
 const COMMANDS = new Set([
+  'updateManualTask','reorderManualTasks','setProductCost','enableUnlimitedStock','createQuotePlan','renameQuotePlan','setQuotePlanPrice','setStoreQuotePlan','setQuotePlanMembers',
   'applyAttachmentRows',
   'setWarehouseStock', 'setStoreAllocation', 'setStoreUnitAllocation',
   'setPrice', 'setUnitQuote', 'setSaleUnits', 'setSaleUnitEquations', 'setWarehouseUnitStock', 'addProduct', 'deleteProduct', 'restoreProduct', 'addStore', 'updateStore', 'deleteStore',
   'submitOrder', 'setStage', 'packLine', 'confirmPackLine', 'setPackLineDone', 'setPackingNote', 'resolvePackingIssue', 'remindOrder', 'recordIssue', 'resolveOrderIssue', 'confirmDelivery', 'setStock', 'importProducts',
-  'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask',
+  'purgeManualTask', 'addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask',
 ]);
 const STORE_COMMANDS = new Set(['submitOrder', 'remindOrder', 'recordIssue', 'confirmDelivery']);
 const clone = value => value !== null && typeof value === 'object' ? structuredClone(value) : value;
@@ -175,12 +176,12 @@ function projectState(state, principal) {
       // Retain deleted records for historical order lines; their marker keeps
       // them out of the store catalogue and clears stale browser cart drafts.
       ...select(product, ['id', 'name', 'familyName', 'category', 'unit', 'spec', 'icon', 'description', 'temperature', 'image', 'saleUnits', 'deletedAt']),
-      catalogueHidden: !catalogueIds.has(product.id), basePrice: null, stock: inventory[product.id],
+      catalogueHidden: !catalogueIds.has(product.id), basePrice: null, stock: inventory[product.id], stockUnlimited:model.isStockUnlimited(product.id)&&model.getAllocation(sid,product.id)===null,
     })),
     stores: [select(store, ['id', 'name', 'city', 'prefecture', 'municipality', 'ward', 'addressDetail', 'address', 'phone', 'contact', 'color', 'route', 'image'])],
     prices: { [sid]: Object.fromEntries(visibleProducts.map(product => [product.id, model.getPrice(sid, product.id)])) },
     quoteMeta: { [sid]: Object.fromEntries(visibleProducts.map(product => [product.id, safeQuote(model.getQuote(sid, product.id))])) },
-    unitQuotes: { [sid]: Object.fromEntries(visibleEntries(state.unitQuotes?.[sid]).map(([pid, quotes]) => [pid, Object.fromEntries(Object.entries(quotes).map(([unit, quote]) => [unit, safeQuote(quote)]))])) },
+    unitQuotes: { [sid]: Object.fromEntries(visibleProducts.map(product=>[product.id,Object.fromEntries(model.getSaleUnits(product.id).map(({unit})=>[unit,safeQuote(model.getUnitQuote(sid,product.id,unit))]))])) },
     // These are already this store's orderable quantities. Leaving allocations
     // empty prevents the browser model from subtracting reservations a second time.
     inventory, storeAllocations: {},
@@ -260,6 +261,17 @@ function validateCommand(principal, command) {
   if (!Array.isArray(command.args) || command.args.length > 6) reject('操作参数不正确。');
   identifier(command.idempotencyKey, '请求编号');
   if (principal.role === 'store' && !STORE_COMMANDS.has(command.type)) reject('门店账号不能执行这项管理操作。', 403, 'FORBIDDEN');
+  const versionAt=index=>{if(!Number.isSafeInteger(command.args[index])||command.args[index]<0)reject('请刷新页面后重新编辑。');};
+  if(command.type==='purgeManualTask'){if(command.args.length!==2)reject('待办参数不正确。');identifier(command.args[0],'待办');versionAt(1);}
+  if(command.type==='updateManualTask'){if(command.args.length!==3)reject('待办参数不正确。');identifier(command.args[0],'待办');versionAt(2);plainObject(command.args[1],'待办');}
+  if(command.type==='reorderManualTasks'){if(command.args.length!==2||!Array.isArray(command.args[0])||command.args[0].length>1000)reject('待办顺序不正确。');command.args[0].forEach(id=>identifier(id,'待办'));versionAt(1);}
+  if(command.type==='setProductCost'){if(command.args.length!==3)reject('成本价参数不正确。');identifier(command.args[0],'商品');versionAt(2);}
+  if(command.type==='enableUnlimitedStock'){if(command.args.length!==1)reject('库存参数不正确。');identifier(command.args[0],'商品');}
+  if(command.type==='createQuotePlan'){if(command.args.length!==1)reject('方案参数不正确。');textField(command.args[0],'方案名称',40,true);}
+  if(command.type==='renameQuotePlan'){if(command.args.length!==3)reject('方案参数不正确。');identifier(command.args[0],'方案');textField(command.args[1],'方案名称',40,true);versionAt(2);}
+  if(command.type==='setQuotePlanPrice'){if(command.args.length!==5)reject('方案报价参数不正确。');identifier(command.args[0],'方案');identifier(command.args[1],'商品');textField(command.args[2],'单位',20,true);plainObject(command.args[3],'报价');if(Object.keys(command.args[3]).some(k=>!['price','taxBasis','taxRate'].includes(k)))reject('报价字段不正确。');versionAt(4);}
+  if(command.type==='setStoreQuotePlan'){if(command.args.length!==3)reject('门店方案参数不正确。');identifier(command.args[0],'门店');if(command.args[1]!==null)identifier(command.args[1],'方案');versionAt(2);}
+  if(command.type==='setQuotePlanMembers'){if(command.args.length!==4||!Array.isArray(command.args[1])||command.args[1].length>200)reject('方案门店不正确。');identifier(command.args[0],'方案');command.args[1].forEach(id=>identifier(id,'门店'));versionAt(2);plainObject(command.args[3],'门店版本');if(Object.keys(command.args[3]).length>200)reject('门店过多。');}
   if(command.type==='applyAttachmentRows') {
     const rows=command.args[0];
     if(command.args.length!==1||!Array.isArray(rows)||!rows.length||rows.length>20)reject('每批可导入 1～20 行。');
@@ -409,13 +421,13 @@ function applyCommand(model, principal, command) {
     const rows=args[0].map(row=>{
       const quote=row.type==='setUnitQuote',productId=row.args[quote?1:0],unit=row.args[quote?2:1],product=model.getProduct(productId);
       if(!product||product.deletedAt)reject('导入商品不存在或已删除。',404);
-      const before=quote?model.getUnitQuote(row.args[0],productId,unit):model.getWarehouseUnitStock(productId,unit);
+      const before=quote?model.getUnitQuote(row.args[0],productId,unit):model.isStockUnlimited(productId)?'无限':model.getWarehouseUnitStock(productId,unit);
       const after=applyCommand(model,principal,row);
       return {productId,productName:product.name,spec:product.spec,unit,kind:quote?'quote':'stock',storeName:quote?model.getStore(row.args[0])?.name:null,before:quote?before.price:before,after:quote?row.args[3]:row.args[2],...(quote?{taxBasis:row.args[4],taxRate:row.args[5]??null}:{})};
     });
     return {name:`${rows.length} 项报价／库存更新`,rows};
   }
-  if (['addManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask'].includes(command.type)) {
+  if (['addManualTask', 'updateManualTask', 'setManualTaskDone', 'setManualTaskDueDate', 'deleteManualTask', 'restoreManualTask'].includes(command.type)) {
     // Source and authorship are assigned by the command handler, never by a
     // submitted field or by whether an upstream packing note was typed by hand.
     const todo = model[command.type](...args);
@@ -489,7 +501,7 @@ function projectResult(result, principal, type) {
 export function previewCommand(state, principal, command) {
   principalScope(principal);validateCommand(principal,command);
   try { return applyCommand(modelFor(clone(state)),principal,command); }
-  catch(error) { if(error instanceof RepositoryError)throw error;reject(error.message||'操作参数不正确。'); }
+  catch(error) { if(error instanceof RepositoryError)throw error;reject(error.message||'操作参数不正确。',error.status===409?409:400); }
 }
 
 export async function executeCommand(db, principal, command, {expectedRevision,writeGuard,beforeCommit,commitStatements=[]} = {}) {
@@ -515,7 +527,7 @@ export async function executeCommand(db, principal, command, {expectedRevision,w
     try { result = applyCommand(model, principal, command); }
     catch (error) {
       if (error instanceof RepositoryError) throw error;
-      reject(error.message || '操作参数不正确。');
+      reject(error.message || '操作参数不正确。',error.status===409?409:400);
     }
     next.priceHistory = (next.priceHistory || []).slice(0, MAX_HISTORY);
     next.reminders = (next.reminders || []).slice(0, MAX_HISTORY);

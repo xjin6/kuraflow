@@ -196,6 +196,8 @@ test('directory cards keep full store accounts reachable without loading credent
   assert.ok(document.querySelector('.stores-grid > .store-card[data-customer-card="tenant-a"]'));
   await openStores(document);
   const card=document.querySelector('.stores-grid > .store-card[data-customer-store="store-a"]');assert.ok(card);
+  assert.equal(card.querySelector('.store-city').textContent,'東京都 千代田区 神田 1-2-3 测试大厦');
+  assert.equal([...card.querySelectorAll('.store-card-info > div > span')].some(node=>node.textContent==='配送地址'),false);
   assert.equal(card.querySelector('.customer-account-list'),null);
   click(document,'[data-action="accounts-customer-store-detail"][data-store="store-a"]');
   const detail=document.querySelector('[role="dialog"]');assert.ok(detail);

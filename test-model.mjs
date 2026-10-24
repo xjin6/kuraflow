@@ -609,8 +609,9 @@ try {
     assert.ok(legacy);
     const oldQuote = m.getQuote(sid, legacy.id);
     const oldOrders = structuredClone(m.state.orders);
-    assert.deepEqual(m.getSaleUnitEquations(legacy.id), [{ fromQty: 1, fromUnit: 'KG', toQty: 1, toUnit: 'KG' }]);
-    m.setSaleUnitEquations(legacy.id, m.getSaleUnitEquations(legacy.id));
+    assert.deepEqual(m.getSaleUnitEquations(legacy.id), [{ fromQty: 1, fromUnit: '500g', toQty: 1, toUnit: '500g' }]);
+    // Previously saved KG-only equations remain supported without changing base stock.
+    m.setSaleUnitEquations(legacy.id, [{ fromQty: 1, fromUnit: 'KG', toQty: 1, toUnit: 'KG' }]);
     assert.equal(m.getProduct(legacy.id).unit, '500g');
     assert.deepEqual(m.getSaleUnits(legacy.id), [{ unit: 'KG', perBase: 0.5 }]);
     assert.deepEqual(m.getQuote(sid, legacy.id), oldQuote);
@@ -619,6 +620,30 @@ try {
     assert.equal(m.getWarehouseStock(legacy.id), 2);
     assert.equal(m.getWarehouseUnitStock(legacy.id, 'KG'), 1);
     assert.deepEqual(m.state.orders, oldOrders);
+  });
+
+  test('package and 500g sales retain their own prices and discrete quantities', () => {
+    const m = fresh(), sid = m.state.stores[0].id;
+    const weight = m.addProduct({ name: '半公斤供货测试', category: '冷冻品', unit: 'KG', stock: 5 });
+    const pack = m.addProduct({ name: '包供货测试', category: '常温品', unit: '包', stock: 10 });
+    m.setSaleUnitEquations(weight.id, [{ fromQty: 1, fromUnit: 'KG', toQty: 2, toUnit: '500g' }]);
+    assert.equal(m.getUnitFactor(weight.id, '500g'), 2);
+    const plan = m.createQuotePlan('原单位报价测试');
+    m.setQuotePlanPrice(plan.id, weight.id, '500g', { price: 2160, taxBasis: 'exclusive', taxRate: .08 });
+    m.setQuotePlanPrice(plan.id, pack.id, '包', { price: 260, taxBasis: 'exclusive', taxRate: .08 });
+    m.setStoreQuotePlan(sid, plan.id);
+    const order = m.submitOrder(sid, { [weight.id]: 3, [pack.id]: 2 }, DEMO_DATE, '', { [weight.id]: '500g', [pack.id]: '包' });
+    assert.equal(order.items[0].price, 2160);
+    assert.equal(order.items[0].baseQty, 1.5);
+    assert.equal(order.items[1].unit, '包');
+    assert.equal(m.getStock(weight.id), 3.5);
+    assert.equal(m.getStock(pack.id), 8);
+    for (const [product, unit] of [[weight, '500g'], [pack, '包']]) {
+      assert.throws(() => m.submitOrder(sid, { [product.id]: .5 }, DEMO_DATE, '', { [product.id]: unit }), /整数|整数数量/);
+    }
+    assert.throws(() => m.setSaleUnits(weight.id, [{ unit: 'KG', perBase: 1 }, { unit: '500g', perBase: 1 }]), /2 × 500g/);
+    assert.throws(() => m.setSaleUnitEquations(weight.id, [{ fromQty: 1, fromUnit: 'KG', toQty: 1, toUnit: '500g' }]), /2 × 500g/);
+    assert.equal(m.getUnitFactor(weight.id, '500g'), 2);
   });
 
   test('warehouse counts accept configured units and protect reserved and allocated stock after conversion', () => {

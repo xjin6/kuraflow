@@ -108,12 +108,12 @@ test('archived members cannot be edited, enabled, reset or have their avatar cha
   assert.deepEqual(await row(f.member.id),snapshot);
 });
 
-test('deletion releases a seat and restoration stays disabled until the normal capacity check permits enabling',async()=>{
+test('restoration stays disabled and can be enabled even with more than three admins',async()=>{
   const f=await fixture(),third=await person({tenantId:f.tenantId});
   ok(await request('/api/team/delete',mutation(f.member),f.owner.cookie));
   const replacement=ok(await request('/api/team/create',{username:'replacement-'+(++serial),name:'替补人员',password,requestId:crypto.randomUUID()},f.owner.cookie),201).account;
   const restored=ok(await request('/api/team/restore',mutation(f.member,1),f.owner.cookie)).account;assert.equal(restored.status,'disabled');
-  ok(await request('/api/team/update',{id:f.member.id,action:'enable'},f.owner.cookie),409);
+  ok(await request('/api/team/update',{id:f.member.id,action:'enable'},f.owner.cookie));
   ok(await request('/api/team/update',{id:replacement.id,action:'disable'},f.owner.cookie));
   ok(await request('/api/team/update',{id:f.member.id,action:'enable'},f.owner.cookie));
   assert.equal((await row(f.member.id)).status,'active');assert.equal(await principalValid(f.member.cookie),false);

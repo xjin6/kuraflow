@@ -7,7 +7,7 @@ import { isLegacyShortageNote, isPackingShortage, packingLineDone } from './noti
 export const DEMO_DATE = '2026-10-08';
 export const STORAGE_KEY = 'kuraflow-business-preview-v2';
 export const categories = ['冷冻品', '常温品', '蔬菜品', '饮品', '干调类', '代买品', '其他食材'];
-export const SALE_UNIT_OPTIONS = Object.freeze(['箱', '袋', '瓶', '罐', '盒', '桶', '个', 'KG']);
+export const SALE_UNIT_OPTIONS = Object.freeze(['箱', '袋', '包', '瓶', '罐', '盒', '桶', '个', '500g', 'KG']);
 export const products = materialProducts;
 export const stores = materialStores;
 
@@ -39,6 +39,11 @@ const roundQuantity = (value, unit) => {
 const normalizedSaleUnit = value => /^(kg|千克|公斤)$/i.test(String(value || '').trim())
   ? 'KG' : String(value || '').trim();
 const ratiosAgree = (a, b) => Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b), 1e-12) * 1e-10;
+const validateFixedWeightUnits = factors => {
+  if (factors.has('KG') && factors.has('500g') && !ratiosAgree(factors.get('500g'), factors.get('KG') * 2)) {
+    throw new Error('500g 与 KG 的换算须为 2 × 500g = 1 KG。');
+  }
+};
 const intrinsicWeightKg = unit => {
   const match = /^(\d+(?:\.\d+)?)\s*(g|kg)$/i.exec(String(unit).trim());
   if (!match) return null;
@@ -338,6 +343,7 @@ export class KitchenModel {
     return selected.perBase;
   }
   getUnitQuote(storeId, productId, unit) {
+    const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,unit);
     const p = this.getProduct(productId);
     this.requireSaleUnit(productId, unit);
     if (unit === p.unit) return this.getQuote(storeId, productId);
@@ -345,6 +351,7 @@ export class KitchenModel {
     return clone(this.state.unitQuotes?.[storeId]?.[productId]?.[unit] || {price:null,taxBasis:'unspecified',taxRate:null,source:null,kind:'unquoted'});
   }
   setUnitQuote(storeId, productId, unit, price, basis = 'unspecified', rate = null) {
+    if(this.getStoreQuotePlan(storeId))throw new Error('此门店正在使用报价方案，请修改方案或先切换为独立报价。');
     this.requireSaleUnit(productId, unit);
     if (unit === this.getProduct(productId).unit) return this.setPrice(storeId, productId, price, basis, rate);
     if (!this.getStore(storeId) || this.getStore(storeId).deletedAt) throw new Error('门店不存在或已删除。');
@@ -408,7 +415,7 @@ export class KitchenModel {
     if (!Array.isArray(equations) || !equations.length) throw new Error('请至少保留一组单位换算关系。');
     const clean = equations.map(row => {
       const fromUnit = normalizedSaleUnit(row?.fromUnit), toUnit = normalizedSaleUnit(row?.toUnit);
-      if (![fromUnit, toUnit].every(unit => SALE_UNIT_OPTIONS.includes(unit))) throw new Error('请选择有效单位：箱、袋、瓶、罐、盒、桶、个、KG。');
+      if (![fromUnit, toUnit].every(unit => SALE_UNIT_OPTIONS.includes(unit))) throw new Error(`请选择有效单位：${SALE_UNIT_OPTIONS.join('、')}。`);
       const number = value => ['number', 'string'].includes(typeof value) && !isBlank(value) ? Number(value) : NaN;
       const fromQty = number(row.fromQty), toQty = number(row.toQty);
       if ([fromQty, toQty].some(value => !Number.isFinite(value) || value <= 0 || value > 1000000 || !hasPrecision(value, 6))) {
@@ -425,10 +432,10 @@ export class KitchenModel {
       edge(row.fromUnit, row.toUnit, row.toQty / row.fromQty);
       edge(row.toUnit, row.fromUnit, row.fromQty / row.toQty);
     }
-    // Numeric legacy weight units have an explicit physical conversion, e.g.
-    // 500g is 0.5 KG. Keep that stock/price base and expose supported KG units.
+    // Legacy weight bases can still be configured through KG without changing
+    // their saved stock/price base, even when that base is now a supported unit.
     const weight = intrinsicWeightKg(product.unit);
-    const anchor = !SALE_UNIT_OPTIONS.includes(product.unit) && weight !== null ? 'KG' : product.unit;
+    const anchor = weight !== null && !graph.has(product.unit) ? 'KG' : product.unit;
     const factors = new Map([[product.unit, 1], [anchor, anchor === product.unit ? 1 : weight]]), queue = [anchor];
     for (let i = 0; i < queue.length; i++) {
       for (const next of graph.get(queue[i]) || []) {
@@ -445,6 +452,7 @@ export class KitchenModel {
     if ([...graph.keys()].some(unit => !factors.has(unit))) {
       throw new Error(`所有单位都须通过换算关系连接到库存基础单位 ${product.unit}。`);
     }
+    validateFixedWeightUnits(factors);
     const units = [...graph.keys()].map(unit => ({ unit, perBase: factors.get(unit) }));
     if (JSON.stringify(this.getSaleUnits(productId)) !== JSON.stringify(units)) delete this.state.cart[productId];
     product.saleUnits = units;
@@ -460,13 +468,14 @@ export class KitchenModel {
     const clean = rows.map(row => {
       const unit = normalizedSaleUnit(row.unit);
       const perBase = Number(row.perBase);
-      if (!SALE_UNIT_OPTIONS.includes(unit)) throw new Error('请选择有效单位：箱、袋、瓶、罐、盒、桶、个、KG。');
+      if (!SALE_UNIT_OPTIONS.includes(unit)) throw new Error(`请选择有效单位：${SALE_UNIT_OPTIONS.join('、')}。`);
       if (seen.has(unit.toLowerCase())) throw new Error('可售卖单位不能重复。');
       if (!Number.isFinite(perBase) || perBase <= 0 || perBase > 1000000 || !hasPrecision(perBase, 6)) throw new Error('换算数量须大于 0，最多六位小数。');
       if (unit.toLowerCase() === p.unit.toLowerCase() && perBase !== 1) throw new Error('库存单位自身的换算数量必须为 1。');
       seen.add(unit.toLowerCase());
       return { unit, perBase };
     });
+    validateFixedWeightUnits(new Map([[p.unit, 1], ...clean.map(row => [row.unit, row.perBase])]));
     if (JSON.stringify(this.getSaleUnits(productId)) !== JSON.stringify(clean)) {
       delete this.state.cart[productId];
     }
@@ -475,7 +484,17 @@ export class KitchenModel {
     this.save();
     return clone(clean);
   }
+  isStockUnlimited(productId) { return this.getProduct(productId)?.stockUnlimited === true; }
+  enableUnlimitedStock(productId) {
+    const product=this.getProduct(productId);if(!product||product.deletedAt)throw new Error('商品不存在或已删除。');
+    product.stockUnlimited=true;this.save();return {id:productId,stockUnlimited:true};
+  }
+  setProductCost(productId,value,expectedVersion=null) {
+    const product=this.getProduct(productId);if(!product||product.deletedAt)throw new Error('商品不存在或已删除。');
+    this.checkEditVersion(product.costVersion,expectedVersion);product.costPrice=quotePrice(value,true);product.costVersion=(product.costVersion||0)+1;this.save();return product;
+  }
   getStock(productId) {
+    if(this.isStockUnlimited(productId))return null;
     const value = this.state.inventory[productId];
     return isBlank(value) ? null : Number(value);
   }
@@ -571,12 +590,14 @@ export class KitchenModel {
     return totalOnHand;
   }
   getPrice(storeId, productId) {
+    const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,this.getProduct(productId)?.unit).price;
     if (!this.getProduct(productId)) throw new Error('商品不存在。');
     if (!this.getStore(storeId)) throw new Error('门店不存在。');
     const value = this.state.prices[storeId]?.[productId];
     return isBlank(value) ? null : Number(value);
   }
   getQuote(storeId, productId) {
+    const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,this.getProduct(productId)?.unit);
     const price = this.getPrice(storeId, productId);
     const meta = this.state.quoteMeta[storeId]?.[productId] || {};
     return {
@@ -601,6 +622,61 @@ export class KitchenModel {
     }, 0));
   }
   status(order) { return order.stage; }
+  getQuotePlans() { return this.state.quotePlans||[]; }
+  getQuotePlan(id) { return this.getQuotePlans().find(plan=>plan.id===id)||null; }
+  getStoreQuotePlan(storeId) { return this.getQuotePlan(this.getStore(storeId)?.quotePlanId); }
+  createQuotePlan(name) {
+    const value=String(name||'').trim();if(!value||value.length>40||this.getQuotePlans().some(p=>p.name===value))throw new Error('请填写不重复的方案名称（最多 40 字）。');
+    const plan={id:'qp-'+crypto.randomUUID(),name:value,quotes:{},version:1};this.state.quotePlans=[...this.getQuotePlans(),plan];this.save();return plan;
+  }
+  renameQuotePlan(id,name,expectedVersion=null) {
+    const plan=this.getQuotePlan(id);if(!plan)throw new Error('报价方案不存在。');this.checkEditVersion(plan.version,expectedVersion);
+    const value=String(name||'').trim();if(!value||value.length>40||this.getQuotePlans().some(p=>p.id!==id&&p.name===value))throw new Error('请填写不重复的方案名称（最多 40 字）。');
+    plan.name=value;plan.version++;this.save();return plan;
+  }
+  checkEditVersion(actual,expected) { if(expected!=null&&expected!==(actual||0))throw Object.assign(new Error('资料已被其他操作更新，请刷新后重新核对。'),{status:409}); }
+  getQuotePlanPrice(id,productId,unit) {
+    const plan=this.getQuotePlan(id);if(!plan)throw new Error('报价方案不存在。');this.requireSaleUnit(productId,unit);
+    return clone(plan.quotes?.[productId]?.[unit]||{price:null,taxBasis:'unspecified',taxRate:null,source:null,kind:'unquoted'});
+  }
+  setQuotePlanPrice(id,productId,unit,value,expectedVersion=null) {
+    const plan=this.getQuotePlan(id),product=this.getProduct(productId);if(!plan||!product||product.deletedAt)throw new Error('报价方案或商品不存在。');
+    this.checkEditVersion(plan.version,expectedVersion);this.requireSaleUnit(productId,unit);
+    const price=quotePrice(value.price,true),quote={price,...taxFields(value.taxBasis||'unspecified',value.taxRate??null),source:'管理员设置',kind:price===null?'unquoted':'manual'};
+    plan.quotes||={};plan.quotes[productId]||={};plan.quotes[productId][unit]=quote;plan.version++;this.save();return quote;
+  }
+  setStoreQuotePlan(storeId,planId,expectedVersion=null) {
+    const store=this.getStore(storeId);if(!store||store.deletedAt)throw new Error('门店不存在。');
+    this.checkEditVersion(store.quoteAssignmentVersion,expectedVersion);
+    if(planId!==null&&!this.getQuotePlan(planId))throw new Error('报价方案不存在。');
+    if((store.quotePlanId||null)===planId)return store;
+    const old=this.getStoreQuotePlan(storeId),next=this.getQuotePlan(planId);if(old)old.version++;if(next)next.version++;
+    store.quotePlanId=planId;store.quoteAssignmentVersion=(store.quoteAssignmentVersion||0)+1;this.save();return store;
+  }
+  setQuotePlanMembers(planId,storeIds,expectedVersion,versions) {
+    const plan=this.getQuotePlan(planId);if(!plan)throw new Error('报价方案不存在。');this.checkEditVersion(plan.version,expectedVersion);
+    if(!Array.isArray(storeIds)||storeIds.length>200||new Set(storeIds).size!==storeIds.length)throw new Error('门店选择不正确。');
+    const stores=this.getStores(),selected=new Set(storeIds);if(storeIds.some(id=>!stores.some(s=>s.id===id)))throw new Error('选择的门店不存在。');
+    const changes=stores.filter(store=>selected.has(store.id)?store.quotePlanId!==planId:store.quotePlanId===planId);
+    for(const store of changes){if(!Object.hasOwn(versions||{},store.id))throw new Error('请重新打开门店选择。');this.checkEditVersion(store.quoteAssignmentVersion,versions[store.id]);}
+    for(const store of changes)this.setStoreQuotePlan(store.id,selected.has(store.id)?planId:null,versions[store.id]);
+    this.save();return {id:planId,members:storeIds.length};
+  }
+  updateManualTask(id,value,expectedVersion=null) {
+    const task=this.state.manualTasks?.find(row=>row.id===id&&!row.deletedAt);if(!task||task.source!=='manual')throw new Error('待办不存在。');
+    this.checkEditVersion(task.version,expectedVersion);const details=manualTaskDetails(value);
+    Object.assign(task,details,{version:(task.version||0)+1,updatedAt:new Date().toISOString()});this.save();return task;
+  }
+  orderedManualTasks() {
+    const ids=this.state.manualTaskOrder||[],rank=new Map(ids.map((id,i)=>[id,i]));
+    return (this.state.manualTasks||[]).slice().sort((a,b)=>(rank.get(a.id)??ids.length)-(rank.get(b.id)??ids.length));
+  }
+  reorderManualTasks(ids,expectedVersion=null) {
+    this.checkEditVersion(this.state.manualTaskOrderVersion,expectedVersion);
+    if(!Array.isArray(ids)||ids.length>1000||new Set(ids).size!==ids.length||ids.some(id=>!this.state.manualTasks?.some(t=>t.id===id&&!t.deletedAt)))throw new Error('待办排序不正确，请刷新。');
+    const selected=new Set(ids);let i=0;this.state.manualTaskOrder=this.orderedManualTasks().map(task=>selected.has(task.id)?ids[i++]:task.id);
+    this.state.manualTaskOrderVersion=(this.state.manualTaskOrderVersion||0)+1;this.save();return ids;
+  }
   addManualTask(value) {
     const details = manualTaskDetails(value);
     const todos = this.state.manualTasks || [];
@@ -619,7 +695,7 @@ export class KitchenModel {
     if (Boolean(todo.completedAt) === done) return todo;
     const now = new Date().toISOString();
     todo.completedAt = done ? now : null;
-    todo.updatedAt = now;
+    todo.updatedAt = now;todo.version=(todo.version||0)+1;
     this.save();
     return todo;
   }
@@ -628,13 +704,22 @@ export class KitchenModel {
     const todo=this.state.manualTasks?.find(row=>row.id===id&&!row.deletedAt);
     if(!todo||todo.source!=='manual')throw new Error('手动待办不存在。');
     if(todo.dueDate===value)return todo;
-    todo.dueDate=value;todo.updatedAt=new Date().toISOString();this.save();return todo;
+    todo.dueDate=value;todo.version=(todo.version||0)+1;todo.updatedAt=new Date().toISOString();this.save();return todo;
+  }
+  purgeManualTask(id, expectedVersion) {
+    const task=this.state.manualTasks?.find(row=>row.id===id);
+    if(!task||task.source!=='manual')throw new Error('待办不存在。');
+    this.checkEditVersion(task.version,expectedVersion);
+    this.state.manualTasks=this.state.manualTasks.filter(row=>row.id!==id);
+    this.state.manualTaskOrder=(this.state.manualTaskOrder||[]).filter(value=>value!==id);
+    this.state.manualTaskOrderVersion=(this.state.manualTaskOrderVersion||0)+1;
+    this.save();return {id,permanentlyDeleted:true};
   }
   deleteManualTask(id) {
     const todo = this.state.manualTasks?.find(row => row.id === id);
     if (!todo || todo.source !== 'manual') throw new Error('手动待办不存在。');
     if (todo.deletedAt) return todo;
-    todo.deletedAt = new Date().toISOString();
+    todo.deletedAt = new Date().toISOString();todo.version=(todo.version||0)+1;
     todo.updatedAt = todo.deletedAt;
     this.save();
     return todo;
@@ -643,7 +728,7 @@ export class KitchenModel {
     const todo = this.state.manualTasks?.find(row => row.id === id);
     if (!todo || todo.source !== 'manual') throw new Error('手动待办不存在。');
     if (!todo.deletedAt) return todo;
-    todo.deletedAt = null;
+    todo.deletedAt = null;todo.version=(todo.version||0)+1;
     todo.updatedAt = new Date().toISOString();
     this.save();
     return todo;
@@ -858,6 +943,7 @@ export class KitchenModel {
   }
 
   setPrice(storeId, productId, rawPrice, taxBasis = 'unspecified', taxRate = null) {
+    if(this.getStoreQuotePlan(storeId))throw new Error('此门店正在使用报价方案，请修改方案或先切换为独立报价。');
     if (!this.getStore(storeId) || this.getStore(storeId).deletedAt) throw new Error('门店不存在或已删除。');
     if (!this.getProduct(productId)) throw new Error('商品不存在。');
     const price = quotePrice(rawPrice);
@@ -914,7 +1000,7 @@ export class KitchenModel {
     const allocated = this.getAllocatedQty(productId);
     if (qty !== null && qty < allocated - this.inventoryTolerance(productId, qty, allocated)) throw new Error(`公司可订库存不能少于门店已分配库存 ${allocated} ${product.unit}。`);
     this.state.inventory[productId] = qty;
-    product.stock = qty;
+    product.stock = qty;product.stockUnlimited=false;
     this.save();
     return qty;
   }

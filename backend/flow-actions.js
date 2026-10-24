@@ -4,13 +4,14 @@ import {getFlowPolicy} from './flow-control.js';
 import {assertFlowPrincipal} from '../scripts/flow-data.mjs';
 import {PREFECTURES,getMunicipalities,getWards,resolveJapanAddress} from '../japan-addresses.js';
 import {validateFlowArguments} from './flow-schema.js';
+import {SALE_UNIT_OPTIONS} from '../data.js';
 
 export const FLOW_REQUEST_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status,publicError:true});};
 const string=(description,maxLength=120)=>({type:'string',minLength:1,maxLength,description});
 const id=description=>({...string(description,160),pattern:'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$'});
 const optionalText=(description,maxLength=120)=>({type:'string',maxLength,description});
-const unit={type:'string',enum:['箱','袋','瓶','罐','盒','桶','个','KG'],description:'售卖单位'};
+const unit={type:'string',enum:[...SALE_UNIT_OPTIONS],description:'售卖单位'};
 const object=(properties,required=[])=>({type:'object',additionalProperties:false,properties,required});
 const storeFields={name:string('门店名称'),prefectureCode:string('都道府县代码',2),municipalityCode:string('市区町村代码',5),wardCode:optionalText('行政区代码',5),addressDetail:string('街道、门牌及楼层',180),contact:string('联系人'),phone:string('联系电话',24)};
 const definition=(name,label,description,properties,required)=>({name,label,description,parameters:object(properties,required)});

@@ -1,0 +1,39 @@
+/* Approved sidebar wordmarks: shared structure, portal colours in the SVG assets. */
+.sidebar .sidebar-brand {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:156px;
+  max-width:100%;
+  min-height:40px;
+  flex:none;
+}
+.sidebar .sidebar-brand-icon {
+  display:block;
+  width:34px;
+  height:34px;
+  flex:none;
+  object-fit:contain;
+}
+.sidebar .sidebar-brand-wordmarks {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:1px;
+  min-width:0;
+  width:112px;
+}
+.sidebar .sidebar-brand-kanji {
+  display:block;
+  height:18px;
+  width:auto;
+  flex:none;
+}
+.sidebar .sidebar-brand-english {
+  display:block;
+  width:112px;
+  max-width:100%;
+  height:auto;
+  flex:none;
+}

@@ -1,3 +1,5 @@
+import {sidebarBrandMarkup} from './sidebar-brand.js';
+import {createPricingUI} from './pricing-ui.js';
 import {createAccountsUI} from './accounts-ui.js';
 import {setPortalIcon} from './portal-icon.js';
 import {createFlowUI} from './flow-ui.js';
@@ -62,9 +64,9 @@ if (clientPortal) {
   };
   restoreClientDraft();
 }
-const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (isCloud&&pageParams.get('page')==='team'?'team':'products') : (['overview','tasks','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || pageParams.get('tab') === 'costs' ? 'costs' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
+const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (isCloud&&pageParams.get('page')==='team'?'team':'products') : (['overview','tasks','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || ['costs','pricing'].includes(pageParams.get('tab')) ? 'pricing' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
 Object.assign(ui, { settlementStore:pageParams.get('page') === 'documents' ? pageParams.get('store') || '' : '', settlementMonth:pageParams.get('month') || '', settlementView:pageParams.get('tab') === 'monthly' ? 'monthly' : 'orders', settlementDemo:pageParams.get('demo') === '1' });
-Object.assign(ui, { businessRange:['week','month','custom'].includes(pageParams.get('range')) ? pageParams.get('range') : 'month', businessStart:pageParams.get('from') || '', businessEnd:pageParams.get('to') || '', businessMetric:'amount', taskTab:pageParams.get('tab')==='manual'?'manual':'system', taskFilters:{system:pageParams.get('tab')!=='manual'?pageParams.get('filter')||'all':'all',manual:pageParams.get('tab')==='manual'?pageParams.get('filter')||'all':'all'}, businessDemo:['overview','tasks'].includes(pageParams.get('page')) && pageParams.has('demo') ? pageParams.get('demo') === '1' : !isCloud });
+Object.assign(ui, { businessRange:['week','month','custom'].includes(pageParams.get('range')) ? pageParams.get('range') : 'month', businessStart:pageParams.get('from') || '', businessEnd:pageParams.get('to') || '', businessMetric:'amount', taskTab:'manual', taskView:pageParams.get('view')==='list'?'list':'dates', quotePlanId:pageParams.get('plan')||'', taskFilters:{manual:pageParams.get('filter')||'all'}, businessDemo:['overview','tasks'].includes(pageParams.get('page')) && pageParams.has('demo') ? pageParams.get('demo') === '1' : !isCloud });
 const labels = { pending: '待配货', packing: '配货中', ready: '待配送', delivering: '配送中', delivered: '已送达' };
 const stages = ['pending', 'packing', 'ready', 'delivering', 'delivered'];
 const categories = ['全部商品', ...businessCategories];
@@ -160,7 +162,7 @@ function cartItems() { return Object.entries(model.state.cart || {}).filter(([id
 function cartTotal() { return Math.round(cartItems().reduce((sum, i) => sum + Math.round(i.qty * i.price * 100) / 100, 0) * 100) / 100; }
 function titleHeading(title, sub, actions = '', eyebrow = '') { return `<div class="page-heading"><div class="heading-copy"><h1>${title}</h1></div>${actions ? `<div class="heading-actions">${actions}</div>` : ''}</div>`; }
 function managementTabs(group, active) {
-  const tabs = group === 'products' ? [['inventory', 'box', '商品与库存'], ['costs', 'wallet', '采购成本']] : [['stores', 'store', '门店与账号'], ['quotes', 'tag', '门店报价']];
+  const tabs = group === 'products' ? [['inventory', 'box', '商品与库存'], ['pricing', 'tag', '报价管理']] : [['stores', 'store', '门店与账号'], ['quotes', 'tag', '门店报价']];
   return `<div class="catalogue-layer-switch management-tabs" role="tablist" aria-label="${group === 'products' ? '商品管理' : '门店管理'}分区">${tabs.map(([key, ico, label], index) => `<button type="button" role="tab" aria-selected="${active === key}" class="catalogue-layer management-tab ${active === key ? 'active' : ''}" data-action="management-tab" data-group="${group}" data-tab="${key}" data-layer="${index ? 'store' : 'warehouse'}">${icon(ico)}<div><strong>${label}</strong></div></button>`).join('')}</div>`;
 }
 function managementHeading(group, active, actions = '') {
@@ -168,7 +170,7 @@ function managementHeading(group, active, actions = '') {
 }
 function productManagementPage() {
   ui.catalogueLayer = 'warehouse';
-  return ui.productTab === 'costs' && !ui.catalogueTrash ? businessUI.costsPage() : businessUI.cataloguePage();
+  return ui.productTab === 'pricing' && !ui.catalogueTrash ? pricingUI.page() : businessUI.cataloguePage();
 }
 function storeManagementPage() {
   ui.catalogueLayer = 'store';
@@ -185,12 +187,12 @@ function shell() {
   const pending = model.state.orders.filter(o => ['pending', 'packing'].includes(o.stage)).length;
   const store = activeStore();
   return `<div class="app-shell ${ui.mobile ? 'mobile-open' : ''}">
-    <aside class="sidebar"><a class="brand" href="#" data-action="home"><div class="brand-mark">${icon('box')}</div><div><div class="brand-name">倉流<span>KURAFLOW</span></div></div></a>
+    <aside class="sidebar"><a class="brand" href="#" data-action="home">${sidebarBrandMarkup(ui.role === 'client' ? 'store' : 'kitchen')}</a>
       <div class="workspace-switch">${ui.role==='admin'&&isCloud&&principal.accountRole==='owner'?`<button type="button" class="workspace-avatar workspace-avatar-button" data-action="organization-avatar" aria-label="修改厨房头像" title="修改厨房头像">${organizationPortrait()}</button>`:`<div class="workspace-avatar">${ui.role === 'admin' ? organizationPortrait() : storeAvatar(store)}</div>`}<div class="workspace-copy"><strong>${ui.role === 'admin' ? escape(company.name) : escape(store.name)}</strong></div></div>
       <div class="sidebar-label">${ui.role === 'admin' ? '运营管理' : '门店服务'}</div><nav class="nav-list">${nav.map(([page, ico, label]) => `<button class="nav-item ${ui.page === page ? 'active' : ''}" data-page="${page}"><span class="nav-icon">${icon(ico)}</span><span>${label}</span>${page === 'orders' && pending ? `<span class="nav-count">${pending}</span>` : ''}</button>`).join('')}</nav>
       <div class="sidebar-footer"><button class="support-link" data-action="help">${icon('help')} 使用指南 ${icon('arrow')}</button>${isCloud?`<button type="button" class="sidebar-profile profile-entry" data-action="open-own-team" aria-label="员工管理与我的账号" title="员工管理与我的账号">`:'<div class="sidebar-profile">'}<div class="user-avatar" data-person-avatar>${personPortrait()}</div><div><strong>${isCloud?escape(principal.displayName):ui.role === 'admin' ? '管理员' : escape(store.contact)}</strong><span>${isCloud?(principal.accountRole==='owner'?'负责人 · 员工管理':'管理员 · 我的账号'):ui.role === 'admin' ? '管理员' : '门店采购负责人'}</span></div>${isCloud?icon('chevron'):'<span class="demo-indicator">演示</span>'}${isCloud?'</button>':'</div>'}</div>
     </aside><div class="mobile-backdrop" data-action="mobile-close"></div>
-    <main class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button menu-button" data-action="mobile-menu" aria-label="打开菜单">${icon('menu')}</button><strong>${currentNav?.[2] || ''}</strong>${ui.orderId && ui.page === 'orders' ? icon('chevron') + '<strong>货单详情</strong>' : ''}</div><div class="topbar-right"><label class="search-box">${icon('search')}<input id="global-search" placeholder="${searchingRecycle ? '搜索已删除商品…' : ui.role === 'admin' ? '搜索门店、订单…' : '搜索商品…'}" aria-label="搜索" value="${escape(searchingRecycle ? ui.recycleQuery : ui.query)}"><span class="search-shortcut">↵</span></label>${isCloud ? `<div class="cloud-session-actions"><span class="cloud-online-label" id="cloud-sync-status">已连接</span><button class="text-button" data-action="logout">退出</button></div>` : clientPortal ? '<button class="text-button" data-action="client-logout">退出登录</button>' : ''}${flowUI.launcher({compact:true})}${notificationButton()}${isCloud?`<button type="button" class="topbar-user personal-profile-button" data-action="open-own-team" aria-label="我的账号与员工管理" data-person-avatar>${personPortrait()}</button>`:`<div class="topbar-user">${ui.role === 'admin' ? '管' : '店'}</div>`}</div></header>
+    <main class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button menu-button" data-action="mobile-menu" aria-label="打开菜单">${icon('menu')}</button><strong>${currentNav?.[2] || ''}</strong>${ui.orderId && ui.page === 'orders' ? icon('chevron') + '<strong>货单详情</strong>' : ''}</div><div class="topbar-right"><label class="search-box">${icon('search')}<input id="global-search" placeholder="${searchingRecycle ? '搜索已删除商品…' : ui.role === 'admin' ? '搜索门店、订单…' : '搜索商品…'}" aria-label="搜索" value="${escape(searchingRecycle ? ui.recycleQuery : ui.query)}"><span class="search-shortcut">↵</span></label>${isCloud ? `<div class="cloud-session-actions"><span class="cloud-online-label" id="cloud-sync-status">已连接</span><button class="text-button" data-action="logout">退出</button></div>` : clientPortal ? '<button class="text-button" data-action="client-logout">退出登录</button>' : ''}${flowUI.launcher({compact:true})}${notificationButton()}</div></header>
     <div class="page-content">${pageContent()}<footer class="page-footer"><span>倉流 KURAFLOW</span><span>${isCloud ? '云端工作台 · 东京时间 · 日元报价' : '本机交互演示 · 东京时间 · 日元报价 · 税口径按来源'}</span></footer></div></main></div>`;
 }
 function pageContent() {
@@ -200,7 +202,7 @@ function pageContent() {
     }));
     return emptyState(model.reportHistoryError?'历史订单读取失败':'正在读取历史订单',model.reportHistoryError||'','clipboard')+(model.reportHistoryError?button('重新加载','reload-report-history','secondary'):'');
   }
-  const pages = { team: () => accountsUI.page(), overview: overviewPage, tasks: () => tasksUI.page(), orders: () => ui.orderId ? orderDetailPage() : ordersPage(), delivery: ordersPage, catalogue: productManagementPage, stores: storeManagementPage, products: businessUI.clientProductsPage, costs: businessUI.costsPage, documents: () => settlementUI.page(), materials: businessUI.materialsPage, 'my-statements': () => settlementUI.page(), 'my-orders': clientOrdersPage, account: accountPage };
+  const pages = { team: () => accountsUI.page(), overview: overviewPage, tasks: () => tasksUI.page(), orders: () => ui.orderId ? orderDetailPage() : ordersPage(), delivery: ordersPage, catalogue: productManagementPage, stores: storeManagementPage, products: businessUI.clientProductsPage, costs: () => pricingUI.page(), documents: () => settlementUI.page(), materials: businessUI.materialsPage, 'my-statements': () => settlementUI.page(), 'my-orders': clientOrdersPage, account: accountPage };
   return (pages[ui.page] || overviewPage)();
 }
 function renderClientLogin(message = '', value = '') {
@@ -460,16 +462,16 @@ function setCart(id, quantity, fullRender = true) {
 }
 function nav(page, tab = '') {
   if (page === 'delivery') page = 'orders';
-  if (page === 'costs') { page = 'catalogue'; tab = 'costs'; }
+  if (page === 'costs') { page = 'catalogue'; tab = 'pricing'; }
   if (isCloud) ui.role = principal.role === 'store' ? 'client' : 'admin';
   const allowed = ui.role === 'admin' ? ['overview', 'tasks', 'orders', 'delivery', 'catalogue', 'stores', 'costs', 'documents', 'materials', 'team'] : ['products', 'my-orders', 'my-statements', 'account', 'team'];
   if (!allowed.includes(page)) throw new Error('当前账号无法访问此页面。');
   clearTimeout(searchTimer);
-  if (page === 'catalogue') ui.productTab = tab === 'costs' ? 'costs' : 'inventory';
-  if (page === 'tasks' && tab) ui.taskTab=tab==='manual'?'manual':'system';
+  if (page === 'catalogue') ui.productTab = ['pricing','costs'].includes(tab) ? 'pricing' : 'inventory';
+  if (page === 'tasks') ui.taskTab='manual';
   if (page === 'stores') ui.storeTab = tab === 'quotes' ? 'quotes' : 'stores';
   if (page === 'documents' && tab !== 'store-settlement') { ui.settlementStore=''; ui.settlementDemo=false; }
-  const section = page === 'catalogue' ? ui.productTab : page === 'stores' ? ui.storeTab : page === 'tasks' ? ui.taskTab : '';
+  const section = page === 'catalogue' ? ui.productTab : page === 'stores' ? ui.storeTab : '';
   history.replaceState(null, '', ui.role === 'client' ? '?view=client&page=' + page : '?page=' + page + (section ? '&tab=' + section : '') + (page === 'stores' && ui.storeTab === 'quotes' && ui.quoteStore ? '&store=' + encodeURIComponent(ui.quoteStore) : ''));
   closeOverlay(); ui.orderId = null; ui.page = page; ui.query = ''; ui.catalogueTrash = false; ui.recycleQuery = ''; ui.status = 'all'; ui.mobile = false; ui.category = '全部商品'; if(page === 'overview') overviewUI.saveURL(); if(page === 'tasks') tasksUI.saveURL(); render(); window.scrollTo({ top: 0 });
 }
@@ -613,6 +615,7 @@ async function runAction(action, el) {
   if (await overviewUI.handleAction(action, el)) return;
   if (await settlementUI.handleAction(action, el)) return;
   if (await storeUI.handleAction?.(action, el)) { refreshLocalWhenReady(); return; }
+  if (await pricingUI.handleAction(action, el)) { refreshLocalWhenReady(); return; }
   if (await businessUI.handleAction(action, el)) { refreshLocalWhenReady(); return; }
   if (action === 'logout') { model.save(); await cloudRequest('/api/accounts/logout', {}); location.href = principal.role === 'admin' ? '/?login=admin' : '/?view=client'; return; }
   if (action === 'invite-store') {
@@ -734,6 +737,7 @@ document.addEventListener('change', async event => {
   try {
     if (accountsUI.handleChange(input)) return;
     if (tasksUI.handleChange(input)) return;
+    if (await pricingUI.handleChange(input)) return;
     if (overviewUI.handleChange(input)) {notificationsUI?.refresh({force:true});return;}
     if (settlementUI.handleChange(input)) return;
     if (storeUI.updateAddress(input)) return;
@@ -835,6 +839,7 @@ document.addEventListener('submit', async event => {
   try {
     if(await accountsUI.handleSubmit(form))return;
     if(await tasksUI.handleSubmit(form))return;
+    if(await pricingUI.handleSubmit(form))return;
     if (ui.role !== 'admin') throw new Error('管理表单仅供管理员使用。');
     if (form.id === 'sale-units-form') { await businessUI.handleUnitsSubmit(form); return; }
     if (form.id === 'price-form') { await model.setPrice(data.storeId, data.productId, data.price, data.taxBasis || 'unspecified', data.taxBasis === 'unspecified' || !data.taxRate ? null : Number(data.taxRate) / 100); closeOverlay(); render(); toast('门店专属报价与税口径已保存。'); }
@@ -855,14 +860,14 @@ window.addEventListener('popstate', event => {
   closeOverlay();
   ui.page = ['overview', 'tasks', 'orders', 'catalogue', 'stores', 'documents', 'materials', 'team'].includes(requested) ? requested : requested === 'delivery' ? 'orders' : requested === 'costs' ? 'catalogue' : 'overview';
   ui.orderId = ui.page === 'orders' ? params.get('order') : null;
-  ui.productTab = requested === 'costs' || params.get('tab') === 'costs' ? 'costs' : 'inventory';
+  ui.productTab = requested === 'costs' || ['costs','pricing'].includes(params.get('tab')) ? 'pricing' : 'inventory';ui.quotePlanId=params.get('plan')||'';
   ui.storeTab = params.get('tab') === 'quotes' ? 'quotes' : 'stores';
   if(isCloud&&ui.page==='team') {
     if(principal.role==='admin'&&principal.accountRole==='owner'&&params.get('store'))accountsUI.openStoreTeam(params.get('store'));
     else accountsUI.openOwnTeam();
   }
   ui.catalogueTrash = params.get('recycle') === '1';
-  if (ui.page === 'tasks') {ui.taskTab=params.get('tab')==='manual'?'manual':'system';ui.taskFilters[ui.taskTab]=params.get('filter')||'all';ui.businessDemo=params.has('demo')?params.get('demo')==='1':!isCloud;}
+  if (ui.page === 'tasks') {ui.taskTab='manual';ui.taskFilters.manual=params.get('filter')||'all';ui.taskView=params.get('view')==='list'?'list':'dates';ui.businessDemo=params.has('demo')?params.get('demo')==='1':!isCloud;}
   if (ui.page === 'overview') { ui.businessRange=['week','month','custom'].includes(params.get('range'))?params.get('range'):'month';ui.businessStart=params.get('from')||'';ui.businessEnd=params.get('to')||'';ui.businessDemo=params.has('demo')?params.get('demo')==='1':!isCloud; }
   if (ui.page === 'documents') { ui.settlementStore=params.get('store') || '';ui.settlementMonth=params.get('month') || '';ui.settlementView=params.get('tab') === 'monthly' ? 'monthly' : 'orders';ui.settlementDemo=params.get('demo') === '1'; }
   ui.quoteStore = params.get('store') || ui.quoteStore;
@@ -881,12 +886,13 @@ window.addEventListener('storage', event => {
   if (hasLocalDraftEditor()) return;
   render();
 });
-const storeUI = createStoreUI({ model, ui, isCloud, personalAccounts:Boolean(principal?.accountRole), canManageAccounts:principal?.accountRole==='owner', escape, icon, button, titleHeading, managementTabs, managementHeading, modal, storeAvatar, closeOverlay, render, toast });
-const businessUI = createBusinessUI({ isCloud, model, ui, money, escape, icon, button, titleHeading, managementTabs, managementHeading, clientStoreSelect, cartPanel, qtyControl, cartTotal, cartItems, mobileCartBar, emptyState, modal, closeOverlay, activeStore, clientStoreHeader, statCard, render, nav, toast });
+const pricingUI = createPricingUI({costFor:p=>businessUI.productCost(p),model,ui,escape,icon,button,money,modal,closeOverlay,render,toast,managementHeading,nav});
+const storeUI = createStoreUI({pricingPicker:store=>pricingUI.picker(store), model, ui, isCloud, personalAccounts:Boolean(principal?.accountRole), canManageAccounts:principal?.accountRole==='owner', escape, icon, button, titleHeading, managementTabs, managementHeading, modal, storeAvatar, closeOverlay, render, toast });
+const businessUI = createBusinessUI({pricingSelector:store=>pricingUI.selector(store),pricingPicker:store=>pricingUI.picker(store), isCloud, model, ui, money, escape, icon, button, titleHeading, managementTabs, managementHeading, clientStoreSelect, cartPanel, qtyControl, cartTotal, cartItems, mobileCartBar, emptyState, modal, closeOverlay, activeStore, clientStoreHeader, statCard, render, nav, toast });
 const settlementUI = createSettlementUI({ model, ui, escape, money, icon, button, modal, activeStore, storeAvatar, company, statCard, emptyState, render, nav, toast, download, getDocumentProfile:isCloud?()=>cloudRequest('/api/document-profile'):null });
 const accountsUI=createAccountsUI({request:cloudRequest,principal:principal||{role:'admin'},escape,button,icon,modal,closeOverlay,toast,render:()=>{if(ui.page==='team')render();},onProfileChange:syncAccountProfiles});
 if(isCloud&&ui.page==='team'&&principal.role==='admin'&&principal.accountRole==='owner'&&pageParams.get('store'))accountsUI.openStoreTeam(pageParams.get('store'));
-const tasksUI = createTasksUI({ model, ui, escape, icon, button, render, modal, closeOverlay, toast });
+const tasksUI = createTasksUI({ model, ui, escape, icon, button, render, modal, closeOverlay, toast, loadAuthors: isCloud ? async()=>{const response=await fetch('/api/team/list',{credentials:'same-origin'});if(!response.ok)throw new Error('无法读取添加人');return (await response.json()).accounts||[];} : null });
 const overviewUI = createOverviewUI({ model, ui, escape, money, icon, button, render, nav, modal, emptyState, closeOverlay, toast });
 if(!isCloud)localNotifications=createLocalNotifications({model,actorId:'local-admin',actorName:'本地管理员',storage:model.storage,onChange:()=>notificationsUI?.refresh()});
 notificationsUI=createNotificationsUI({

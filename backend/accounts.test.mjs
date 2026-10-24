@@ -145,7 +145,7 @@ test('adding a store automatically creates its owner and retries preserve the st
   const team = expectStatus(await call('/api/team/list', undefined, store.cookie), 200).data;
   assert.equal(team.accounts.length, 1);
   assert.equal(team.accounts[0].id, rows.results[0].id);
-  assert.equal(team.limit, 3);
+  assert.equal(team.limit, null);
   const state = expectStatus(await call('/api/state', undefined, store.cookie), 200).data;
   assert.deepEqual(state.state.stores.map(item => item.id), [store.id]);
   assert.equal(state.principal.storeId, store.id);
@@ -153,23 +153,23 @@ test('adding a store automatically creates its owner and retries preserve the st
   assert.equal(expectStatus(await call('/api/admin/store-code', {storeId:store.id}, kitchen.cookie), 200).data.accessCode, store.masterCode);
 });
 
-test('concurrent creation permits three additional kitchen admins and rejects the fourth atomically', async () => {
+test('concurrent creation permits more than three kitchen admins while retaining isolation and idempotency', async () => {
   const kitchen = await kitchenFixture('厨房管理员名额');
   const bodies = Array.from({length:4}, (_,index) => ({username:`quota-${counter}-${index}`, password, requestId:crypto.randomUUID()}));
   const results = await Promise.all(bodies.map(body => call('/api/team/create', body, kitchen.cookie)));
-  assert.deepEqual(results.map(result => result.status).sort(), [201, 201, 201, 409]);
+  assert.deepEqual(results.map(result => result.status).sort(), [201, 201, 201, 201]);
   const team = expectStatus(await call('/api/team/list', undefined, kitchen.cookie), 200).data;
-  assert.equal(team.limit, 3);
-  assert.equal(team.accounts.length, 4);
+  assert.equal(team.limit, null);
+  assert.equal(team.accounts.length, 5);
   assert.equal(team.accounts.filter(account => account.accountRole === 'owner').length, 1);
-  assert.equal(team.accounts.filter(account => account.accountRole === 'member').length, 3);
+  assert.equal(team.accounts.filter(account => account.accountRole === 'member').length, 4);
   const accepted = results.findIndex(result => result.status === 201);
   const repeated = expectStatus(await call('/api/team/create', bodies[accepted], kitchen.cookie), 201);
   assert.equal(repeated.data.account.id, results[accepted].data.account.id);
   const memberCookie = await loginMember(results[accepted].data.account.username);
   expectStatus(await call('/api/team/create', {username:'unauthorized-member', password}, memberCookie), 403);
   const rows = await env.DB.prepare("SELECT password_hash FROM staff_accounts WHERE tenant_id=? AND account_role='member'").bind(kitchen.tenantId).all();
-  assert.equal(rows.results.length, 3);
+  assert.equal(rows.results.length, 4);
   for (const row of rows.results) assert.match(row.password_hash, /^scrypt\$/);
   assert.ok(!JSON.stringify(rows).includes(password));
   assert.ok(!JSON.stringify(team).includes('password_hash'));
@@ -306,26 +306,26 @@ test('members can change their own username and password, with collisions reject
   assert.equal(await authenticated(await loginMember(usernameOnly, 'kitchen', newPassword)), true);
 });
 
-test('each store has three additional seats and disabling members releases seats without permitting overfill', async () => {
+test('store admins can exceed three and re-enable accounts without a seat cap', async () => {
   const kitchen = await kitchenFixture('门店名额厨房');
   const store = await storeFixture(kitchen);
   const members = [];
   for (let index = 0; index < 3; index++) members.push(await addMember(store.cookie));
   const memberCookie = await loginMember(members[0].account.username, 'store');
-  expectStatus(await call('/api/team/create', {username:`full-${counter}`, password}, store.cookie), 409);
+  expectStatus(await call('/api/team/create', {username:`full-${counter}`, password}, store.cookie), 201);
   const team = expectStatus(await call('/api/team/list', undefined, store.cookie), 200).data;
-  assert.equal(team.accounts.length, 4);
+  assert.equal(team.accounts.length, 5);
   const owner = team.accounts.find(account => account.accountRole === 'owner');
   expectStatus(await call('/api/team/update', {id:owner.id, action:'disable'}, store.cookie), 403);
   expectStatus(await call('/api/team/update', {id:members[0].account.id, action:'disable'}, store.cookie), 200);
   assert.equal(await authenticated(memberCookie), false);
   expectStatus(await call('/api/accounts/login', {username:members[0].account.username, password, portal:'store'}), 401);
   const replacement = await addMember(store.cookie);
-  expectStatus(await call('/api/team/update', {id:members[0].account.id, action:'enable'}, store.cookie), 409);
+  expectStatus(await call('/api/team/update', {id:members[0].account.id, action:'enable'}, store.cookie), 200);
   expectStatus(await call('/api/team/update', {id:replacement.account.id, action:'disable'}, store.cookie), 200);
   expectStatus(await call('/api/team/update', {id:members[0].account.id, action:'enable'}, store.cookie), 200);
   assert.equal(await authenticated(await loginMember(members[0].account.username, 'store')), true);
-  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM staff_accounts WHERE tenant_id=? AND store_id=? AND account_role='member' AND status='active'").bind(kitchen.tenantId, store.id).first()).n, 3);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM staff_accounts WHERE tenant_id=? AND store_id=? AND account_role='member' AND status='active'").bind(kitchen.tenantId, store.id).first()).n, 4);
   assert.equal((await addMember(kitchen.cookie)).account.storeId, null);
 });
 

@@ -1,160 +1,93 @@
-import {businessTasks,validDay} from './overview-data.js';
+import {validDay} from './overview-data.js';
 import {tokyoDate} from './settlement-data.js';
 
 export function createTasksUI(ctx) {
   const {model,ui,escape:esc,icon,button,render,modal,closeOverlay=()=>{},toast=()=>{}}=ctx;
-  let manualDraft={title:'',note:'',dueDate:''},draftVersion=0;
-  const savingForms=new WeakSet(),savingTasks=new Set();
-  const now=()=>tokyoDate();
-  const shortDate=date=>date.slice(5).replace('-','/');
-  const scope=()=>({includeDemo:ui.businessDemo});
-  const taskKinds=[['all','全部'],['issue','异常'],['overdue','逾期'],['packing','待配货'],['ready','待出发'],['stock','待补货'],['completed','已完成']];
-  const taskTab=()=>ui.taskTab==='manual'?'manual':'system';
-  ui.taskFilters||={system:'all',manual:'all'};
-  const filters=()=>taskTab()==='manual'?[['all','未完成'],['overdue','逾期'],['completed','已完成']]:taskKinds.filter(([key])=>key!=='completed');
-  const taskFilter=()=>filters().some(([key])=>key===ui.taskFilters[taskTab()])?ui.taskFilters[taskTab()]:'all';
-  const allTaskRecords=result=>[...(result.tasks||[]),...(result.completedTasks||[])];
-  const selectTasks=(tasks,key=taskFilter())=>tasks.filter(task=>task.source===taskTab()&&(key==='completed'?Boolean(task.completedAt):!task.completedAt&&(key==='all'||task.kind===key||(key==='overdue'&&task.isOverdue))));
-  function saveURL() {
-    const params=new URLSearchParams({page:'tasks',tab:taskTab()});
-    if(taskFilter()!=='all')params.set('filter',taskFilter());
-    if(model.state.orders.some(order=>order.isDemo))params.set('demo',ui.businessDemo?'1':'0');
-    history.replaceState(null,'','?'+params);
+  const drafts=new Map(),saving=new Set(),collapsed=new Set();let drag=null,sorting=false;
+  document.addEventListener('error',event=>{if(event.target.matches?.('.task-author-avatar img'))event.target.remove();},true);
+  ui.taskFilters||={manual:'all'};ui.taskView||='dates';
+  const filter=()=>['all','overdue','completed'].includes(ui.taskFilters.manual)?ui.taskFilters.manual:'all';
+  const dateLabel=value=>!value?'未设日期':value===tokyoDate()?'今天 · '+value.slice(5).replace('-','/'):value.replaceAll('-','/');
+  const ordered=()=>model.orderedManualTasks().filter(task=>!task.deletedAt);
+  const select=(tasks,key=filter())=>tasks.filter(task=>key==='completed'?!!task.completedAt:!task.completedAt&&(key!=='overdue'||task.dueDate&&task.dueDate<tokyoDate()));
+  function saveURL(){const query=new URLSearchParams({page:'tasks'});if(filter()!=='all')query.set('filter',filter());if(ui.taskView==='list')query.set('view','list');history.replaceState(null,'','?'+query);}
+  function deadline(task){
+    const overdue=!task.completedAt&&task.dueDate&&task.dueDate<tokyoDate();
+    return `<button type="button" class="business-task-deadline business-due-button ${overdue?'is-overdue':''}" data-action="business-manual-date" data-id="${esc(task.id)}" aria-label="修改截止日期：${esc(task.title)}">${task.dueDate?`<time datetime="${esc(task.dueDate)}">${esc(dateLabel(task.dueDate))}</time>`:'设置截止日期'}${overdue?'<span class="business-due-status">已逾期</span>':''}</button>`;
   }
-  function sourceTabs(result) {
-    return `<div class="catalogue-layer-switch management-tabs task-source-tabs" role="tablist" aria-label="待办来源">${[['system','bell','系统推送'],['manual','edit','手动记录']].map(([key,ico,label],index)=>`<button type="button" id="task-tab-${key}" role="tab" aria-selected="${taskTab()===key}" aria-controls="task-panel" tabindex="${taskTab()===key?0:-1}" class="catalogue-layer management-tab ${taskTab()===key?'active':''}" data-action="business-task-tab" data-tab="${key}" data-layer="${index?'store':'warehouse'}">${icon(ico)}<div><strong>${label}</strong></div><span class="task-tab-count">${result.tasks.filter(task=>task.source===key).length}</span></button>`).join('')}</div>`;
+  let authors=null,authorsLoading=false;
+  function author(task){
+    const person=authors?.find(p=>p.id===task.createdBy);
+    const name=person?.name||task.createdByName||'创建人未记录';
+    const url=person?.avatarUrl;
+    const photo=typeof url==='string'&&url.startsWith('/api/account-avatar?')?`<img src="${esc(url)}" alt="" loading="lazy">`:'';
+    return `<span class="task-author" data-task-author="${esc(task.id)}" aria-label="添加人：${esc(name)}"><span class="task-author-avatar" aria-hidden="true"><span>${esc(name==='创建人未记录'?'?':Array.from(name)[0])}</span>${photo}</span><span class="task-author-name">${esc(name)}</span></span>`;
   }
-  function taskList(tasks,today) {
-    const filter=taskFilter(),label=filters().find(([key])=>key===filter)?.[1]||'';
-    const empty=filter==='completed'?'暂无已完成的记录':filter==='all'?(taskTab()==='manual'?'暂无手动记录':'当前没有系统待办'):`当前没有${label}事项`;
-    return tasks.length?`<ul class="business-todo-list is-full">${tasks.map(task=>taskRow(task,today)).join('')}</ul>`:`<div class="business-tasks-empty">${icon(taskTab()==='manual'?'edit':'check')}<span>${empty}</span></div>`;
+  function loadAuthors(){
+    if(!ctx.loadAuthors||authorsLoading||authors)return;
+    authorsLoading=true;
+    Promise.resolve().then(()=>ctx.loadAuthors()).then(rows=>{authors=rows||[];for(const task of model.state.manualTasks||[]){const slot=[...document.querySelectorAll('[data-task-author]')].find(n=>n.dataset.taskAuthor===task.id);if(slot)slot.outerHTML=author(task);}}).catch(()=>{}).finally(()=>{authorsLoading=false;});
   }
-  function page() {
-    if(ui.role!=='admin')throw new Error('仅管理员可查看待办事项。');
-    const result=businessTasks(model,now(),scope()),tasks=allTaskRecords(result),selected=taskFilter(),visible=selectTasks(tasks);
-    const demo=taskTab()==='system'&&model.state.orders.some(order=>order.isDemo)?`<label class="business-demo"><input id="tasks-demo" type="checkbox" ${ui.businessDemo?'checked':''}>含演示订单</label>`:'';
-    const taskAction=taskTab()==='manual'?button('新增待办','business-task-add','secondary','type="button"','plus'):demo||`<span class="btn btn-secondary business-task-action-placeholder" aria-hidden="true" inert>${icon('plus')}新增待办</span>`;
-    return `<div class="task-page"><div class="page-heading management-heading task-page-heading"><div class="management-heading-main"><h1>待办事项</h1>${sourceTabs(result)}</div></div><section class="section-card business-tasks" id="task-panel" role="tabpanel" aria-labelledby="task-tab-${taskTab()}"><div class="business-tasks-header"><div class="business-task-filters" role="group" aria-label="${taskTab()==='manual'?'手动记录状态':'系统待办分类'}">${filters().map(([key,label])=>`<button type="button" class="business-task-filter ${key===selected?'active':''}" aria-pressed="${key===selected}" data-action="business-task-filter" data-filter="${key}" ${key==='completed'?'aria-label="已完成的手动待办"':''}><span>${label}</span><strong>${selectTasks(tasks,key).length}</strong></button>`).join('')}</div><div class="business-tasks-actions">${taskAction}</div></div><div class="business-task-list-heading" aria-hidden="true"><span>事项 <span class="business-tasks-total">${visible.length}</span></span><span>截止日期</span><span>操作</span></div>${taskList(visible,result.today)}</section></div>`;
+  function row(task){const done=!!task.completedAt;return `<li class="business-todo-row ${done?'is-completed':''}" data-task-id="manual:${esc(task.id)}" data-manual-id="${esc(task.id)}"><button type="button" class="task-drag-handle" data-task-drag="${esc(task.id)}" aria-label="排序 ${esc(task.title)}" title="${ui.taskView==='dates'?'同一天内拖动排序；跨日期请切换列表':'拖动排序，也可用上下方向键'}" ${sorting?'disabled':''}><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="5" r="1.2"/><circle cx="11" cy="5" r="1.2"/><circle cx="5" cy="10" r="1.2"/><circle cx="11" cy="10" r="1.2"/><circle cx="5" cy="15" r="1.2"/><circle cx="11" cy="15" r="1.2"/></svg></button><div class="business-todo-copy"><div class="business-todo-title"><button type="button" class="task-title-edit" data-action="business-task-edit" data-id="${esc(task.id)}">${esc(task.title)}</button></div>${task.note?`<p class="business-task-description">${esc(task.note)}</p>`:''}</div>${author(task)}${deadline(task)}<div class="task-row-actions"><button type="button" class="icon-button task-delete-button" data-action="business-task-delete" data-id="${esc(task.id)}" aria-label="彻底删除待办：${esc(task.title)}" title="彻底删除">${icon('trash')}</button><button type="button" class="icon-button" data-action="business-task-edit" data-id="${esc(task.id)}" aria-label="编辑待办：${esc(task.title)}">${icon('edit')}</button><button type="button" class="business-manual-check" role="checkbox" aria-checked="${done}" aria-label="${done?'恢复待办：':'完成待办：'}${esc(task.title)}" title="${done?'恢复未完成':'完成待办'}" data-action="business-manual-toggle" data-id="${esc(task.id)}" ${saving.has(task.id)?'disabled':''}><span>${icon('check')}</span></button></div></li>`;}
+  function page(){
+    if(ui.role!=='admin')throw new Error('仅管理员可查看待办。');loadAuthors();const tasks=ordered(),visible=select(tasks);
+    const list=(rows,group='list')=>`<ul class="business-todo-list is-full" data-task-group="${group}" ${collapsed.has(group)?'hidden':''}>${rows.map(row).join('')}</ul>`;
+    let content='';
+    if(!visible.length)content='<div class="business-tasks-empty">'+icon('list')+`<span>${filter()==='completed'?'暂无已完成的待办':filter()==='overdue'?'暂无逾期待办':'暂无待办事项'}</span></div>`;
+    else if(ui.taskView==='list')content=list(visible);
+    else {const dates=[...new Set(visible.map(t=>t.dueDate||''))].sort((a,b)=>(a||'9999').localeCompare(b||'9999'));content=dates.map(date=>{const group=date||'undated',rows=visible.filter(t=>(t.dueDate||'')===date);return `<section class="task-date-group"><button type="button" class="task-date-heading" data-action="business-task-date-group" data-group="${group}" aria-expanded="${!collapsed.has(group)}">${icon('chevron')}<strong>${esc(dateLabel(date))}</strong><span>${rows.length}</span></button>${list(rows,group)}</section>`;}).join('');}
+    return `<div class="task-page"><div class="page-heading task-page-heading"><h1>待办事项</h1><div class="heading-actions">${button('新增待办','business-task-add','primary','type="button"','plus')}</div></div><section class="section-card business-tasks" id="task-panel"><div class="business-tasks-header task-toolbar"><div class="business-task-filters" role="group" aria-label="待办状态">${[['all','未完成'],['overdue','逾期'],['completed','已完成']].map(([key,label])=>`<button type="button" class="business-task-filter ${filter()===key?'active':''}" data-action="business-task-filter" data-filter="${key}" aria-pressed="${filter()===key}"><span>${label}</span><strong>${select(tasks,key).length}</strong></button>`).join('')}</div><div class="view-switch" role="group" aria-label="待办显示方式">${[['list','列表'],['dates','按日期']].map(([key,label])=>`<button type="button" class="${ui.taskView===key?'active':''}" aria-pressed="${ui.taskView===key}" data-action="business-task-view" data-view="${key}">${label}</button>`).join('')}</div></div>${content}</section></div>`;
   }
-  function refreshTasks() {
-    const previous=document.querySelector('.task-page');
-    if(previous)previous.outerHTML=page();
+  function refreshTasks(){const previous=document.querySelector('.task-page');if(previous)previous.outerHTML=page();}
+  function openForm(id=''){
+    const task=id?model.state.manualTasks.find(t=>t.id===id&&!t.deletedAt):null;if(id&&!task)throw new Error('待办不存在。');
+    const draft=drafts.get(id)||{title:task?.title||'',note:task?.note||'',dueDate:id?(task.dueDate||''):tokyoDate(),version:task?.version||0};drafts.set(id,draft);
+    modal(id?'编辑待办':'新增待办',`<div class="manual-task-fields"><div class="field"><label for="manual-task-title">待办事项</label><input class="input" id="manual-task-title" name="title" value="${esc(draft.title)}" maxlength="120" required autocomplete="off"></div><div class="field"><label for="manual-task-due">截止日期</label><input class="input" type="date" id="manual-task-due" name="dueDate" value="${esc(draft.dueDate)}" required min="1000-01-01" max="9999-12-31"></div><div class="field"><label for="manual-task-note">备注 <span class="manual-task-optional">选填</span></label><textarea class="input" id="manual-task-note" name="note" rows="3" maxlength="500">${esc(draft.note)}</textarea></div><div id="manual-task-error" class="inline-editor-feedback" role="alert"></div>${id?button('读取最新资料','business-task-refresh-edit','ghost',`type="button" data-id="${esc(id)}" hidden`):''}</div>`,button('取消','close','secondary','type="button"')+`<button class="btn btn-primary" type="submit">${id?'保存修改':'添加待办'}</button>`,'manual-task-form');
+    const form=document.getElementById('manual-task-form');form.dataset.taskId=id;form.dataset.version=draft.version;form.closest('.modal')?.classList.add('manual-task-modal');form.querySelector('#manual-task-title').focus({preventScroll:true});
   }
-  function taskDescription(task) {
-    if(task.description || !task.issues?.length)return task.description || '';
-    const order=task.orderId?model.state.orders.find(item=>item.id===task.orderId):null;
-    return task.issues.map(issue=>{
-      const name=issue.productId?(order?.items?.find(item=>item.productId===issue.productId)?.productName || model.getProduct(issue.productId)?.name || issue.productId):'';
-      return name?`${name}：${issue.text}`:issue.text;
-    }).filter(Boolean).join('；');
+  function handleInput(input){if(!['manual-task-title','manual-task-note','manual-task-due'].includes(input.id))return false;const form=input.closest('form'),key=form.dataset.taskId||'',draft=drafts.get(key);if(draft)draft[input.name]=input.value;const error=form.querySelector('#manual-task-error');error.textContent='';return true;}
+  async function handleSubmit(form){
+    if(form.id==='task-delete-form'){
+      if(ui.role!=='admin')throw new Error('仅管理员可删除待办。');
+      const submit=form.querySelector('[type=submit]');if(saving.has(form))return true;saving.add(form);submit.disabled=true;
+      try{await model.purgeManualTask(form.dataset.taskId,Number(form.dataset.version));drafts.delete(form.dataset.taskId);closeOverlay();refreshTasks();toast('待办已彻底删除。');}
+      catch(error){form.querySelector('[role=alert]').textContent=error.message||'删除失败，请重试。';}
+      finally{saving.delete(form);submit.disabled=false;}return true;
+    }
+    if(form.id!=='manual-task-form')return false;if(ui.role!=='admin')throw new Error('仅管理员可编辑待办。');
+    const id=form.dataset.taskId||'',value={title:form.elements.title.value.trim(),note:form.elements.note.value.trim(),dueDate:form.elements.dueDate.value};
+    const error=form.querySelector('#manual-task-error');if(!value.title||!validDay(value.dueDate)){error.textContent=!value.title?'请输入待办事项。':'请选择有效的截止日期。';return true;}
+    if(saving.has(form))return true;saving.add(form);const submit=form.querySelector('[type=submit]');submit.disabled=true;
+    try{if(id)await model.updateManualTask(id,value,Number(form.dataset.version));else await model.addManualTask(value);drafts.delete(id);if(!id){ui.taskFilters.manual='all';collapsed.delete(value.dueDate);saveURL();}closeOverlay();refreshTasks();toast(id?'待办已更新。':'待办已添加。');}
+    catch(failure){error.textContent=failure.message||'保存失败，请重试。';if(id&&failure.status===409)form.querySelector('[data-action="business-task-refresh-edit"]').hidden=false;}
+    finally{saving.delete(form);submit.disabled=false;}return true;
   }
-  function deadlineHTML(task,today) {
-    const manual=task.source==='manual',date=task.dueDate;
-    const label=date?(date===today?'今天截止':(date.slice(0,4)===today.slice(0,4)?shortDate(date):date.replaceAll('-','/'))+' 截止'):manual?'设置截止日期':'未设截止日期';
-    const days=task.isOverdue?Math.round((Date.parse(today+'T12:00:00Z')-Date.parse(date+'T12:00:00Z'))/86400000):0;
-    const content=`<span class="business-due-value">${date?`<time datetime="${date}">${esc(label)}</time>`:esc(label)}</span>${days?`<span class="business-due-status">逾期 ${days} 天</span>`:''}`;
-    const classes=`business-task-deadline ${task.isOverdue?'is-overdue':date===today&&!task.completedAt?'is-today':''} ${date?'':'is-unset'}`;
-    return manual?`<button type="button" class="${classes} business-due-button" data-action="business-manual-date" data-id="${esc(task.manualId)}" aria-label="${esc((date?'修改':'设置')+'截止日期：'+task.title)}">${content}</button>`:`<div class="${classes}" ${date?'title="按订单配送日期"':''}>${content}</div>`;
+  async function persistOrder(list,version,focusId){
+    const ids=[...list.querySelectorAll('[data-manual-id]')].map(row=>row.dataset.manualId);sorting=true;
+    try{await model.reorderManualTasks(ids,version);toast('顺序已保存。');}catch(error){toast(error.message||'排序失败，请重试。');}finally{sorting=false;refreshTasks();if(focusId)[...document.querySelectorAll('[data-task-drag]')].find(n=>n.dataset.taskDrag===focusId)?.focus({preventScroll:true});}
   }
-  function taskRow(task,today) {
-    const manual=task.source==='manual',completed=Boolean(task.completedAt);
-    const kind=taskKinds.find(([key])=>key===task.kind)?.[1] || '待处理';
-    const action=task.productId&&!task.orderId?'stock':'order-detail';
-    const id=action==='stock'?task.productId:task.orderId;
-    const label=task.kind==='stock'?'更新库存':task.kind==='issue'?'处理异常':task.stage==='delivering'?'跟进配送':task.kind==='ready'||task.stage==='ready'?'安排配送':'去配货';
-    const description=taskDescription(task);
-    const control=manual?`<button type="button" class="business-manual-check" role="checkbox" aria-checked="${completed}" aria-label="${esc((completed?'恢复待办：':'完成待办：')+task.title)}" title="${completed?'恢复待办':'完成待办'}" data-action="business-manual-toggle" data-id="${esc(task.manualId)}" ${savingTasks.has(task.manualId)?'disabled aria-busy="true"':''}><span>${icon('check')}</span></button>`:button(label,action,'secondary',`data-id="${esc(id)}" aria-label="${esc(label+'：'+task.title)}"`,'arrow');
-    const meta=[task.orderId?`<span>${esc(task.orderId)}</span>`:'',completed?`<span>完成 ${esc(shortDate(task.completedDate))}</span>`:'',task.isDemo?'<span>演示</span>':''].filter(Boolean).join('');
-    return `<li class="business-todo-row ${task.kind==='issue'||task.isOverdue?'is-urgent':''} ${completed?'is-completed':''}" data-task-id="${esc(task.id)}" data-task-kind="${esc(task.kind)}" data-task-source="${manual?'manual':'system'}"><div class="business-todo-copy"><div class="business-todo-title"><strong>${esc(task.title)}</strong><span class="business-task-source ${manual?'is-manual':''}">${manual?'手动':'系统'}</span>${manual?'':`<span class="business-task-kind">${kind}</span>`}</div>${description?`<p class="business-task-description" title="${esc(description)}">${esc(description)}</p>`:''}${meta?`<div class="business-task-meta">${meta}</div>`:''}</div>${deadlineHTML(task,today)}${control}</li>`;
-  }
-  function addTaskForm() {
-    draftVersion++;
-    modal('新增待办',`<div class="manual-task-fields"><div class="field"><label for="manual-task-title">待办事项 <span class="business-task-source is-manual">手动</span></label><input class="input" id="manual-task-title" name="title" value="${esc(manualDraft.title)}" maxlength="120" required placeholder="例如：联系供应商确认明日到货" autocomplete="off"></div><div class="field manual-task-date-field"><label for="manual-task-due">截止日期</label><input class="input" type="date" id="manual-task-due" name="dueDate" value="${esc(manualDraft.dueDate||now())}" required min="1000-01-01" max="9999-12-31"></div><div class="field"><label for="manual-task-note">备注 <span class="manual-task-optional">选填</span></label><textarea class="input" id="manual-task-note" name="note" maxlength="500" rows="3" placeholder="补充需要跟进的内容">${esc(manualDraft.note)}</textarea></div><div class="inline-editor-feedback" id="manual-task-error" role="alert"></div></div>`,button('取消','close','secondary','type="button"')+'<button type="submit" class="btn btn-primary">添加待办</button>','manual-task-form');
-    document.getElementById('manual-task-form')?.closest('.modal')?.classList.add('manual-task-modal');
-    globalThis.requestAnimationFrame?.(()=>document.getElementById('manual-task-title')?.focus({preventScroll:true}));
-  }
-  function handleInput(input) {
-    if(input.id==='manual-task-date'){input.removeAttribute('aria-invalid');const error=document.getElementById('manual-task-date-error');if(error)error.textContent='';return true;}
-    if(!['manual-task-title','manual-task-note','manual-task-due'].includes(input.id))return false;
-    manualDraft={...manualDraft,[input.name]:input.value};
-    const error=document.getElementById('manual-task-error');if(error)error.textContent='';
-    input.removeAttribute('aria-invalid');return true;
-  }
-  async function handleSubmit(form) {
-    if(form.id==='manual-task-date-form')return saveTaskDate(form);
-    if(form.id!=='manual-task-form')return false;
-    if(ui.role!=='admin')throw new Error('仅管理员可添加待办。');
-    if(savingForms.has(form))return true;
-    const title=form.elements.title.value.trim(),note=form.elements.note.value.trim(),dueDate=form.elements.dueDate.value,error=form.querySelector('#manual-task-error');
-    if(!title||title.length>120||note.length>500){error.textContent=!title?'请输入待办事项。':title.length>120?'待办事项最多 120 个字。':'备注最多 500 个字。';const field=!title||title.length>120?form.elements.title:form.elements.note;field.setAttribute('aria-invalid','true');field.focus({preventScroll:true});return true;}
-    if(!validDay(dueDate)||dueDate<'1000-01-01'){error.textContent='请选择有效的截止日期。';form.elements.dueDate.setAttribute('aria-invalid','true');form.elements.dueDate.focus({preventScroll:true});return true;}
-    const version=draftVersion,submit=form.querySelector('[type="submit"]');
-    savingForms.add(form);if(submit){submit.disabled=true;submit.textContent='添加中…';}error.textContent='';
-    try {
-      await model.addManualTask({title,note,dueDate});
-      if(version===draftVersion)manualDraft={title:'',note:'',dueDate:''};
-      if(form.isConnected){closeOverlay();ui.taskTab='manual';ui.taskFilters.manual='all';saveURL();refreshTasks();document.querySelector('[data-action="business-task-add"]')?.focus({preventScroll:true});toast('待办已添加。');}
-    } catch(failure) {if(form.isConnected)error.textContent=failure.message||'添加失败，请重试。';}
-    finally {savingForms.delete(form);if(submit){submit.disabled=false;submit.textContent='添加待办';}}
+  async function handleAction(action,el){
+    if(!['business-task-delete','business-task-add','business-task-edit','business-task-refresh-edit','business-manual-date','business-manual-toggle','business-task-filter','business-task-view','business-task-date-group','business-task-tab'].includes(action))return false;
+    if(ui.role!=='admin')throw new Error('仅管理员可编辑待办。');
+    if(action==='business-task-delete'){
+      const task=model.state.manualTasks.find(t=>t.id===el.dataset.id);if(!task)throw new Error('待办不存在。');
+      modal('彻底删除待办',`<p>确定彻底删除「${esc(task.title)}」？</p><p class="muted-copy">删除后无法恢复，也不会保留在已完成列表中。</p><p role="alert" class="inline-editor-feedback"></p>`,button('取消','close','secondary','type="button"')+'<button type="submit" class="btn btn-danger">彻底删除</button>','task-delete-form');
+      const form=document.getElementById('task-delete-form');form.dataset.taskId=task.id;form.dataset.version=task.version||0;
+    }
+    else if(action==='business-task-add')openForm();
+    else if(['business-task-edit','business-manual-date','business-task-refresh-edit'].includes(action)){if(action==='business-task-refresh-edit')drafts.delete(el.dataset.id);openForm(el.dataset.id);}
+    else if(action==='business-manual-toggle'){
+      const task=model.state.manualTasks.find(t=>t.id===el.dataset.id);if(!task||saving.has(task.id))return true;saving.add(task.id);el.disabled=true;
+      const done=!task.completedAt;try{await model.setManualTaskDone(task.id,done);refreshTasks();toast(done?'已完成，可在「已完成」中恢复。':'已恢复为未完成。');}finally{saving.delete(task.id);if(el.isConnected)el.disabled=false;}
+    }else if(action==='business-task-date-group'){const group=el.dataset.group;collapsed.has(group)?collapsed.delete(group):collapsed.add(group);refreshTasks();}
+    else if(action==='business-task-view'){ui.taskView=el.dataset.view==='list'?'list':'dates';saveURL();refreshTasks();}
+    else {ui.taskFilters.manual=action==='business-task-tab'?'all':el.dataset.filter;saveURL();refreshTasks();}
     return true;
   }
-  function taskDateForm(id) {
-    const task=(model.state.manualTasks||[]).find(task=>task.id===id&&!task.deletedAt);
-    if(!task)throw new Error('待办不存在，请刷新后重试。');
-    modal(task.dueDate?'修改截止日期':'设置截止日期',`<div class="manual-task-fields"><p class="manual-task-date-title">${esc(task.title)}</p><div class="field"><label for="manual-task-date">截止日期</label><input class="input" type="date" id="manual-task-date" name="dueDate" value="${esc(task.dueDate||now())}" required min="1000-01-01" max="9999-12-31"></div><div class="inline-editor-feedback" id="manual-task-date-error" role="alert"></div></div>`,button('取消','close','secondary','type="button"')+'<button type="submit" class="btn btn-primary">保存日期</button>','manual-task-date-form');
-    const form=document.getElementById('manual-task-date-form');form.dataset.taskId=id;form.closest('.modal')?.classList.add('manual-task-modal');
-  }
-  async function saveTaskDate(form) {
-    if(ui.role!=='admin')throw new Error('仅管理员可修改待办。');
-    if(savingForms.has(form))return true;
-    const dueDate=form.elements.dueDate.value,error=form.querySelector('#manual-task-date-error');
-    if(!validDay(dueDate)||dueDate<'1000-01-01'){error.textContent='请选择有效的截止日期。';form.elements.dueDate.setAttribute('aria-invalid','true');form.elements.dueDate.focus({preventScroll:true});return true;}
-    const submit=form.querySelector('[type="submit"]');savingForms.add(form);submit.disabled=true;submit.textContent='保存中…';error.textContent='';
-    try {await model.setManualTaskDueDate(form.dataset.taskId,dueDate);if(form.isConnected){closeOverlay();refreshTasks();toast('截止日期已更新。');}}
-    catch(failure){if(form.isConnected)error.textContent=failure.message||'保存失败，请重试。';}
-    finally {savingForms.delete(form);submit.disabled=false;submit.textContent='保存日期';}
-    return true;
-  }
-  async function toggleManualTask(el) {
-    const id=el.dataset.id,task=(model.state.manualTasks||[]).find(task=>task.id===id);
-    if(!task)throw new Error('待办不存在，请刷新后重试。');
-    if(savingTasks.has(id))return true;
-    const done=!task.completedAt;
-    const index=[...document.querySelector('.business-tasks').querySelectorAll('.business-manual-check')].indexOf(el);
-    savingTasks.add(id);el.disabled=true;el.setAttribute('aria-busy','true');
-    try {
-      await model.setManualTaskDone(id,done);savingTasks.delete(id);refreshTasks();
-      const area=document.querySelector('.business-tasks');
-      const checks=[...(area?.querySelectorAll('.business-manual-check')||[])];
-      (checks[Math.min(index,checks.length-1)]||document.querySelector(`[data-action="business-task-filter"][data-filter="${taskFilter()}"]`))?.focus({preventScroll:true});
-      toast(done?'待办已完成，可在「已完成」中恢复。':'已恢复待办。');
-    } finally {savingTasks.delete(id);if(el.isConnected){el.disabled=false;el.removeAttribute('aria-busy');}}
-    return true;
-  }
-  function handleChange(input) {
-    if(input.id!=='tasks-demo')return false;
-    if(ui.role!=='admin')throw new Error('仅管理员可查看待办事项。');
-    ui.businessDemo=input.checked;saveURL();render();document.getElementById('tasks-demo')?.focus({preventScroll:true});return true;
-  }
-  function switchTab(tab) {
-    ui.taskTab=tab==='manual'?'manual':'system';saveURL();render();
-    document.querySelector(`[data-action="business-task-tab"][data-tab="${taskTab()}"]`)?.focus({preventScroll:true});
-  }
-  function handleAction(action,el) {
-    if(!['business-task-tab','business-task-filter','business-task-add','business-manual-toggle','business-manual-date'].includes(action))return false;
-    if(ui.role!=='admin')throw new Error('仅管理员可查看待办事项。');
-    if(action==='business-task-tab'){switchTab(el.dataset.tab);return true;}
-    if(action==='business-task-add'){addTaskForm();return true;}
-    if(action==='business-manual-toggle')return toggleManualTask(el);
-    if(action==='business-manual-date'){taskDateForm(el.dataset.id);return true;}
-    ui.taskFilters[taskTab()]=filters().some(([key])=>key===el.dataset.filter)?el.dataset.filter:'all';
-    saveURL();render();document.querySelector(`[data-action="business-task-filter"][data-filter="${taskFilter()}"]`)?.focus({preventScroll:true});return true;
-  }
-  function handleKeydown(event) {
-    if(event.isComposing)return;
-    const tab=event.target.closest?.('[data-action="business-task-tab"]');
-    if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-    event.preventDefault();switchTab(event.key==='Home'?'system':event.key==='End'?'manual':tab.dataset.tab==='system'?'manual':'system');
-  }
-  return {page,handleAction,handleChange,handleInput,handleSubmit,handleKeydown,saveURL};
+  function handleKeydown(event){const handle=event.target.closest?.('[data-task-drag]');if(!handle||!['ArrowUp','ArrowDown'].includes(event.key)||sorting)return;event.preventDefault();const row=handle.closest('li'),list=row.parentElement,other=event.key==='ArrowUp'?row.previousElementSibling:row.nextElementSibling;if(!other)return;list.insertBefore(row,event.key==='ArrowUp'?other:other.nextSibling);persistOrder(list,model.state.manualTaskOrderVersion||0,row.dataset.manualId);}
+  document.addEventListener('pointerdown',event=>{const handle=event.target.closest?.('[data-task-drag]');if(!handle||event.button!==0||sorting||ui.role!=='admin')return;drag={order:[...handle.closest('li').parentElement.children].map(n=>n.dataset.manualId).join(','),row:handle.closest('li'),handle,y:event.clientY,version:model.state.manualTaskOrderVersion||0,moved:false};handle.setPointerCapture?.(event.pointerId);});
+  document.addEventListener('pointermove',event=>{if(!drag)return;if(Math.abs(event.clientY-drag.y)<5&&!drag.moved)return;drag.moved=true;drag.row.classList.add('is-dragging');const target=document.elementFromPoint?.(event.clientX,event.clientY)?.closest('[data-manual-id]');if(target&&target!==drag.row&&target.parentElement===drag.row.parentElement){const box=target.getBoundingClientRect();target.parentElement.insertBefore(drag.row,event.clientY<box.top+box.height/2?target:target.nextSibling);}});
+  document.addEventListener('pointerup',()=>{if(!drag)return;const state=drag;drag=null;state.row.classList.remove('is-dragging');if(state.moved&&state.row.isConnected&&state.order!==[...state.row.parentElement.children].map(n=>n.dataset.manualId).join(','))persistOrder(state.row.parentElement,state.version,state.row.dataset.manualId);});
+  document.addEventListener('pointercancel',()=>{drag=null;refreshTasks();});
+  return {page,handleAction,handleChange:()=>false,handleInput,handleSubmit,handleKeydown,saveURL};
 }

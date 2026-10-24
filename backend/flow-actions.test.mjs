@@ -5,7 +5,8 @@ import {readFile,readdir,mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
-import {createFlowActions,findFlowAddresses} from './flow-actions.js';
+import {createFlowActions,findFlowAddresses,FLOW_WRITE_TOOLS} from './flow-actions.js';
+import {SALE_UNIT_OPTIONS} from '../data.js';
 import {createFlowDataContext,runFlowTool} from './flow-tools.js';
 import {getIdentity} from './accounts.js';
 import {hashToken} from './auth.js';
@@ -16,6 +17,14 @@ import {createFlowStore} from './flow-store.js';
 import {createLocalFlowRuntime} from '../scripts/flow-local-runtime.mjs';
 
 let runtime,db;
+test('Flow quote and stock tools use the same source-unit catalogue as ordering',()=>{
+  for(const name of ['flow_create_product','flow_set_stock','flow_set_quote']) {
+    const definition=FLOW_WRITE_TOOLS.find(tool=>tool.name===name);
+    assert.deepEqual(definition.parameters.properties.unit.enum,[...SALE_UNIT_OPTIONS]);
+    assert.ok(definition.parameters.properties.unit.enum.includes('包'));
+    assert.ok(definition.parameters.properties.unit.enum.includes('500g'));
+  }
+});
 before(async()=>{
   runtime=new Miniflare(convertV4MiniflareOptions({workers:[{name:'flow-actions-test',modules:true,script:'export default {fetch(){return new Response("ok")}}',compatibilityDate:'2026-10-08',d1Databases:{DB:'flow-actions-test'}}]}));
   db=await runtime.getD1Database('DB');
