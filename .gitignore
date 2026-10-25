@@ -10,6 +10,8 @@ __pycache__/
 .venv/
 
 # Credentials and local business data: never publish to the public repository
+# Current data/materials/archive locations are all inside /private-preview/.
+# Keep the legacy root exclusions too, so old local copies remain protected.
 .dev.vars*
 .env*
 !.dev.vars.example

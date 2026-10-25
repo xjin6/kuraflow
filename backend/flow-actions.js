@@ -1,10 +1,10 @@
 import {executeCommand,previewCommand} from './repository.js';
 import {ensureMaster,accountMutationGuard} from './accounts.js';
 import {getFlowPolicy} from './flow-control.js';
-import {assertFlowPrincipal} from '../scripts/flow-data.mjs';
-import {PREFECTURES,getMunicipalities,getWards,resolveJapanAddress} from '../japan-addresses.js';
+import {assertFlowPrincipal} from '../src/shared/flow-data.mjs';
+import {PREFECTURES,getMunicipalities,getWards,resolveJapanAddress} from '../src/shared/japan-addresses.js';
 import {validateFlowArguments} from './flow-schema.js';
-import {SALE_UNIT_OPTIONS} from '../data.js';
+import {SALE_UNIT_OPTIONS} from '../src/shared/data.js';
 
 export const FLOW_REQUEST_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status,publicError:true});};

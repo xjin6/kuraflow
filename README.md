@@ -18,7 +18,7 @@ npm run dev:accounts
 
 <http://localhost:8787/local-setup> を開くと、ローカル環境のプラットフォーム用ログイン画面に移動します。初回起動時に生成される開発用プラットフォームキーは、ローカルの `private-preview/platform-key.txt` に保存されます。このキーでログインし、プラットフォームからキッチンを開設します。店舗アカウントは各キッチンで登録します。
 
-`setup:local` は `business-data.js` が存在しない場合にのみ空のデータモジュールを作成し、既存ファイルは上書きしません。アカウント機能のローカル環境では D1 / KV を使用し、データを `private-preview/` に保存します。本番データベースへの接続や、実際の業務データの取り込みは行いません。
+`setup:local` は `private-preview/data/business-data.js` が存在しない場合にのみ空のデータモジュールを作成し、既存ファイルは上書きしません。アカウント機能のローカル環境では D1 / KV を使用し、データを `private-preview/` に保存します。本番データベースへの接続や、実際の業務データの取り込みは行いません。
 
 ローカルに業務資料がある場合は、`npm start` で <http://127.0.0.1:4173/> の静的プレビューを起動できます。このプレビューはブラウザーの localStorage を使用し、ポート 8787 のアカウント環境とは別にデータを保存します。
 
@@ -30,27 +30,37 @@ npm run test:backend
 npm run build:cloud
 ```
 
-本番向けのフロントエンドビルドは、`cloud-seed.js` の空データ定義を使用します。業務データはログイン後に権限に応じて API から取得するため、ビルド時にローカルの実データは必要ありません。
+本番向けのフロントエンドビルドは、`src/shared/cloud-seed.js` の空データ定義を使用します。業務データはログイン後に権限に応じて API から取得するため、ビルド時にローカルの実データは必要ありません。
 
-`npm test` は初期の業務モデルを対象とする回帰テストで、ローカルの `business-data.js` に含まれる過去の業務資料のサンプルが必要です。これらのサンプルは公開リポジトリには含まれません。フロントエンドとバックエンドのテストは、`setup:local` の実行後、空のデータモジュールを使って実行できます。
+`npm test` は初期の業務モデルを対象とする回帰テストで、ローカルの `private-preview/data/business-data.js` に含まれる過去の業務資料のサンプルが必要です。これらのサンプルは公開リポジトリには含まれません。フロントエンドとバックエンドのテストは、`setup:local` の実行後、空のデータモジュールを使って実行できます。
 
 ## ディレクトリ構成
 
-- `app.js`、各業務 UI モジュール、CSS：業務画面、共通コントロール、スタイル。
-- `cloud-bootstrap.js`、`cloud-client.js`：クラウド環境のログイン、起動処理、API クライアント。
-- `platform-app.js`、`accounts-ui.js`：プラットフォームとアカウントの管理。
-- `backend/`：Worker、認証・認可、業務データの保存、データベース移行、テスト。
-- `frontend/`：フロントエンドの DOM 回帰テスト。
-- `public/`：実行に必要なフォント、アイコン、商品画像、ブラウザー用ライブラリ。
-- `scripts/`：ローカル開発、ビルド、保守用スクリプト。
-- `docs/`：製品仕様、実装の説明、デプロイ記録。
+```text
+src/
+  app/          起動、三端のシェル、API クライアント
+  features/     accounts / catalogue / stores / tasks / overview / settlement / notifications / flow
+  shared/       業務モデル、集計、単位、通知、Flow のデータ処理
+  ui/           共通コントロール、アバター、ブランド表示
+  styles/       共通・機能別 CSS
+backend/        Worker、認証・認可、永続化、migrations/
+tests/          frontend / backend / flow / fixtures、業務モデル
+scripts/        build / dev / flow / lib / legacy
+public/         公開アセット、フォント、画像、vendor
+docs/           仕様、構成、デプロイ記録
+design/         確定済みデザイン素材（ローカルのみ）
+private-preview/ ローカルデータ、資料、プレビュー、archive（非公開）
+private-deploy/  デプロイ備考、バックアップ、固定リリース（非公開）
+```
+
+詳細と旧パスの扱いは [リポジトリ構成](docs/repository-layout.md) を参照してください。`npm start`、`npm run dev:accounts`、テスト・ビルドのコマンドと公開 URL は従来通りです。`dist-cloud/` と `dist-worker/` は生成物です。
 
 ## 公開リポジトリの範囲
 
 このリポジトリには、プログラム、テスト、必要な静的アセット、技術ドキュメントを含めています。以下のファイルは `.gitignore` で除外し、ローカル環境でのみ保持します。
 
 - 環境変数ファイル、キーや認証情報、セッション情報、データベースファイル、および `private-deploy/`、`private-preview/`。
-- 実際の販売価格、仕入原価、店舗情報、請求書を含む `business-data.js`、`materials/`、`materials-derived/`。
+- 実際の販売価格、仕入原価、店舗情報、請求書を含む `private-preview/data/business-data.js`、`private-preview/materials/`、`private-preview/materials-derived/`。
 - インストール済み依存パッケージ、ビルド成果物、一時ファイル、バックアップ、過去のデザイン案、プレビュー画像、エクスポートファイル。
 
 現在のデプロイ状況は [クラウド環境のデプロイ記録](docs/cloud-deployment-status.md)、アカウントの仕様は [プラットフォーム・キッチン・店舗のログインと管理者アカウント](docs/master-auth-release-2026-10-16.md) を参照してください。`wrangler.jsonc` には既存環境のリソースバインディングを記載しています。別のアカウントへデプロイする場合は、その環境に対応する Worker、D1、KV を設定してください。

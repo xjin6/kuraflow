@@ -1,0 +1,274 @@
+/* Business overview shares the existing steel-blue surfaces and typography. */
+.business-heading { margin-bottom:18px; align-items:center; }
+.business-periods { gap:12px; width:auto; margin-left:auto; }
+.business-periods .tab { min-height:38px; font-size:12px; padding:8px 10px 11px; }
+.business-scope { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 18px; margin:-4px 0 16px; color:var(--ui-muted); font-size:12px; }
+.business-order-counts { display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; }
+.business-order-counts .text-button { display:inline-flex; align-items:center; gap:5px; font-size:12px; }
+.business-order-counts strong { font:550 13px var(--font-data); }
+.business-order-counts .icon svg { width:14px; height:14px; }
+.business-order-counts > span { font-size:11px; }
+.business-demo { display:inline-flex; align-items:center; gap:7px; cursor:pointer; min-height:32px; }
+.business-demo input { accent-color:var(--ui-accent); width:14px; height:14px; margin:0; }
+.business-custom-range { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+.business-custom-range > label { display:grid; gap:6px; }
+.business-custom-range > label > span { color:var(--ui-muted); font-size:12px; }
+.business-custom-range .ui-date { width:166px; }
+.business-date-separator { height:40px; display:flex; align-items:center; color:var(--ui-muted); font-size:12px; }
+.task-page { width:100%; max-width:840px; }
+.task-source-tabs .task-tab-count { color:var(--ui-muted); font:500 12px var(--font-data); }
+.task-source-tabs .active .task-tab-count { color:inherit; }
+.business-tasks { width:100%; max-width:840px; padding:17px 20px 10px; margin-bottom:22px; }
+.business-tasks-header { display:grid; grid-template-columns:minmax(0,1fr) 112px; align-items:center; gap:14px; min-height:40px; }
+.business-tasks-total { color:var(--ui-muted); font:500 13px var(--font-data); }
+.business-tasks-actions { display:flex; align-items:center; justify-content:flex-end; gap:14px; min-width:0; min-height:40px; white-space:nowrap; }
+.business-tasks-actions .text-button { display:inline-flex; align-items:center; gap:4px; font-size:12px; }
+.business-tasks-actions .btn { min-height:40px; padding:7px 11px; font-size:12px; }
+.business-tasks-actions .icon svg { width:14px; height:14px; }
+.business-task-action-placeholder { visibility:hidden; pointer-events:none; user-select:none; }
+/* Both source tabs share a single toolbar row, including its reserved action
+   slot. Narrow screens scroll filters within that row instead of changing height. */
+.business-task-filters { display:flex; align-items:center; flex-wrap:nowrap; gap:17px; min-width:0; min-height:40px; margin:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.business-task-filters::-webkit-scrollbar { display:none; }
+.business-task-filter { position:relative; display:inline-flex; align-items:center; flex:none; gap:6px; min-height:40px; padding:6px 0; border:0; background:none; color:var(--ui-muted); font:12px var(--font-ui); white-space:nowrap; cursor:pointer; }
+.business-task-filter strong { font:500 12px var(--font-data); color:inherit; }
+.business-task-filter.active { color:var(--ui-accent); }
+.business-task-filter.active::after { content:''; position:absolute; bottom:2px; left:0; right:0; height:2px; background:currentColor; border-radius:1px; }
+.business-task-filter:hover { color:var(--ui-accent); }
+.business-task-filter:focus-visible { outline:2px solid var(--ui-accent); outline-offset:-2px; border-radius:2px; }
+.business-todo-list { list-style:none; margin:0; padding:0; }
+.business-todo-row, .business-task-list-heading { display:grid; grid-template-columns:minmax(0,1fr) 128px 88px; align-items:center; gap:14px; }
+.business-task-list-heading { margin:18px 0 4px; color:var(--ui-muted); font-size:11px; }
+.business-task-list-heading > span:first-child { display:flex; align-items:baseline; gap:8px; }
+.business-task-list-heading > span:last-child { text-align:center; }
+.business-todo-row { padding:11px 0; }
+.business-todo-copy { min-width:0; }
+.business-todo-title { display:flex; align-items:center; flex-wrap:wrap; gap:5px 10px; }
+.business-todo-title strong { color:var(--ui-text); font-size:13px; font-weight:550; line-height:1.6; overflow-wrap:anywhere; }
+.business-task-kind { color:var(--ui-muted); font-size:11px; white-space:nowrap; }
+.business-task-source { display:inline-flex; align-items:center; flex-shrink:0; min-height:19px; padding:0 5px; border:1px solid #d9e1e7; border-radius:4px; color:#6d7d89; font-size:10px; font-weight:500; line-height:17px; white-space:nowrap; }
+.business-task-source.is-manual { border-color:#dcd5e9; color:#78648d; background:#f9f7fc; }
+.business-todo-row.is-urgent .business-task-kind { color:#a74d50; }
+.business-task-description { margin:3px 0 4px; color:var(--ui-muted); font-size:12px; line-height:1.6; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.business-task-meta { display:flex; align-items:baseline; flex-wrap:wrap; gap:3px 10px; color:var(--ui-muted); font-size:11px; line-height:1.6; }
+.business-task-meta > span:first-child { font-family:var(--font-data); }
+.business-task-deadline { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; min-width:0; min-height:40px; padding:4px 0; color:var(--ui-muted); font-size:12px; line-height:1.6; }
+.business-due-value { font-variant-numeric:tabular-nums; }
+.business-due-status { font-size:11px; }
+.business-task-deadline.is-overdue { color:#a44d54; }
+.business-task-deadline.is-today { color:var(--ui-accent); }
+.business-task-deadline.is-unset { font-size:11px; }
+.business-due-button { width:100%; border:0; border-radius:4px; background:none; font-family:var(--font-ui); text-align:left; cursor:pointer; }
+.business-due-button:hover .business-due-value { text-decoration:underline; text-underline-offset:3px; }
+.business-due-button:focus-visible { outline:2px solid var(--ui-accent); outline-offset:3px; }
+.business-todo-row > .btn { white-space:nowrap; min-height:34px; font-size:12px; padding:7px 11px; }
+.business-todo-row > .btn .icon svg { width:14px; height:14px; }
+.business-manual-check { display:grid; place-items:center; justify-self:center; width:44px; height:44px; padding:0; border:0; border-radius:6px; color:var(--ui-accent); background:transparent; cursor:pointer; }
+.business-manual-check > span { display:grid; place-items:center; width:21px; height:21px; border:1.5px solid #acb8c2; border-radius:5px; transition:border-color .16s ease, opacity .16s ease; }
+.business-manual-check .icon { opacity:0; }
+.business-manual-check .icon svg { width:14px; height:14px; }
+.business-manual-check:hover > span { border-color:var(--ui-accent); }
+.business-manual-check:focus-visible { outline:2px solid var(--ui-accent); outline-offset:1px; }
+.business-manual-check[aria-checked="true"] > span { border-color:#ccd4db; color:#96a4af; }
+.business-manual-check[aria-checked="true"] .icon { opacity:1; }
+.business-manual-check:disabled { opacity:.45; cursor:wait; }
+.business-todo-row.is-completed .business-todo-copy { opacity:.5; }
+.business-todo-row.is-completed .business-task-deadline { color:#98a4af; }
+.business-todo-row.is-completed .business-todo-title strong { text-decoration:line-through; text-decoration-color:#b4bdc6; }
+.manual-task-modal { max-width:480px; }
+.manual-task-fields { display:grid; gap:15px; }
+.manual-task-fields .field { margin:0; }
+.manual-task-fields label { display:flex; align-items:center; gap:8px; }
+.manual-task-date-field { max-width:230px; }
+.manual-task-date-title { margin:0; color:var(--ui-text); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.manual-task-optional { color:var(--ui-muted); font-size:11px; font-weight:400; }
+.manual-task-fields textarea { min-height:86px; resize:vertical; }
+.manual-task-fields .inline-editor-feedback:empty { display:none; }
+.business-tasks-empty { display:flex; align-items:center; gap:9px; padding:22px 0 25px; color:var(--ui-muted); font-size:12px; }
+.business-tasks-empty > .icon { color:#879ba8; }
+.business-todo-list.is-full .business-task-description { display:block; overflow:visible; }
+.business-period-caption { display:flex; justify-content:space-between; gap:12px; color:var(--ui-muted); font-size:11px; }
+.business-period-caption > span:first-child { font-family:var(--font-data); }
+.business-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:30px; margin:18px 0 28px; }
+.business-metric-label { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--ui-muted); font-size:12px; }
+.business-metric-label .icon { color:#8fa3b1; }
+.business-metric-label svg { width:16px; height:16px; }
+.business-metric-value { display:flex; align-items:baseline; gap:5px; margin:12px 0 9px; min-height:43px; color:var(--ui-text); font-size:clamp(24px,2.45vw,34px); font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:-.045em; white-space:nowrap; }
+.business-metric-value small { font-size:12px; color:var(--ui-muted); font-weight:400; letter-spacing:0; }
+.business-metric-value.is-unknown { font-size:25px; }
+.business-comparison { display:block; color:var(--ui-muted); font-size:11px; font-weight:400; line-height:18px; font-family:var(--font-ui); }
+.business-comparison.up { color:#426f83; }
+.business-comparison.down { color:#a54c54; }
+.business-comparison > span { color:var(--ui-muted); margin-left:3px; }
+.business-data-note { display:flex; align-items:flex-start; gap:7px; font-size:12px; color:#916b41; margin:-7px 0 20px; }
+.business-data-note .icon { height:18px; }
+.business-trend { margin-bottom:20px; }
+.business-trend .section-header { border-bottom:0; align-items:flex-start; }
+.business-trend .section-header p, .business-ranking .section-header p { margin:5px 0 0; color:var(--ui-muted); font-size:11px; }
+.business-chart-switch { gap:8px; }
+.business-chart-switch .tab { min-height:34px; padding:4px 10px 9px; font-size:12px; }
+.business-chart { padding:10px 30px 23px 70px; }
+.business-chart-plot { position:relative; height:205px; }
+.business-chart-grid { position:absolute; left:0; right:0; height:0; border-top:1px solid #e8edf1; }
+.business-chart-grid > span { position:absolute; top:0; right:calc(100% + 12px); transform:translateY(-50%); color:#637986; font:10px var(--font-data); white-space:nowrap; }
+.business-chart-svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+.business-chart-hit { position:absolute; top:0; height:100%; padding:0; transform:translateX(-50%); border:0; background:none; border-radius:0; z-index:2; cursor:crosshair; }
+.business-chart-hit:focus-visible { outline:none; }
+.business-chart-guide { position:absolute; left:50%; top:0; bottom:0; border-left:1px dashed #9cb2c2; opacity:0; }
+.business-chart-dot { position:absolute; left:50%; top:var(--dot-top); transform:translate(-50%,-50%); width:10px; height:10px; border-radius:50%; border:2px solid #fff; background:#456981; box-shadow:0 0 0 1px #456981; opacity:0; }
+.business-chart-tooltip { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:grid; gap:4px; text-align:left; width:160px; padding:11px 13px; background:#fff; color:var(--ui-text); border:1px solid var(--ui-border); border-radius:6px; box-shadow:0 4px 20px rgba(30,57,78,.13); pointer-events:none; opacity:0; visibility:hidden; transition:opacity 120ms; }
+.business-chart-tooltip strong { color:var(--ui-muted); font:11px var(--font-data); }
+.business-chart-tooltip > span { font:14px var(--font-data); }
+.business-chart-tooltip small { font-size:11px; color:var(--ui-muted); }
+.business-chart-hit.is-first .business-chart-tooltip { left:50%; transform:none; }
+.business-chart-hit.is-last .business-chart-tooltip { left:auto; right:50%; transform:none; }
+.business-chart-hit.is-only .business-chart-tooltip { left:50%; right:auto; transform:translateX(-50%); }
+.business-chart-hit:hover, .business-chart-hit:focus { z-index:3; }
+.business-chart-hit:hover .business-chart-tooltip, .business-chart-hit:focus .business-chart-tooltip { opacity:1; visibility:visible; }
+.business-chart-hit:hover .business-chart-guide, .business-chart-hit:focus .business-chart-guide,
+.business-chart-hit:hover .business-chart-dot, .business-chart-hit:focus .business-chart-dot,
+.business-chart-hit.is-only .business-chart-dot { opacity:1; }
+.business-chart-axis { display:flex; justify-content:space-between; margin-top:13px; font:10px var(--font-data); color:var(--ui-muted); }
+.business-chart-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; min-height:224px; padding:24px; text-align:center; }
+.business-chart-empty > .icon { color:#9badb9; margin-bottom:4px; }
+.business-chart-empty > strong { color:var(--ui-text); font-size:13px; font-weight:500; }
+.business-chart-empty > span:last-child { color:var(--ui-muted); font-size:12px; }
+.business-rankings { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(0,1fr); gap:20px; }
+.business-ranking { min-width:0; }
+.business-ranking .section-header { align-items:baseline; border-bottom:0; gap:10px; }
+.business-ranking .section-header .text-button { font-size:11px; white-space:nowrap; }
+.business-ranking table { width:100%; min-width:430px; }
+.business-ranking td { border:0; font-size:12px; padding:14px 18px; vertical-align:middle; }
+.business-ranking th { font-size:11px; border:0; padding:11px 18px; }
+.business-ranking td .cell-secondary { display:block; margin-top:3px; font-size:11px; }
+.business-ranking .product-name-link { font-size:13px; text-align:left; }
+.business-ranking td.business-numeric { font:12px var(--font-data); white-space:nowrap; }
+.business-numeric .business-comparison { margin-top:3px; font-size:10px; }
+.business-last-order { white-space:nowrap; font:11px var(--font-data); color:var(--ui-muted); }
+.business-product-name { display:flex; align-items:baseline; gap:11px; }
+.business-rank { font:10px var(--font-data); color:#7b919f; }
+.business-quantities { font-family:var(--font-data); font-size:11px; white-space:nowrap; }
+.business-quantities > span { display:block; line-height:19px; }
+.business-ranking .empty-state { padding:35px 20px; }
+
+/* The management badge counts the current account’s unread event notifications. */
+.topbar .notification-button { position:relative; display:inline-flex; width:30px; height:30px; flex:none; margin-right:5px; overflow:visible; color:#516979; border:1px solid #d6e0e7; background:rgba(255,255,255,.75); border-radius:6px; }
+.topbar .notification-button .icon svg { width:16px; height:16px; }
+.topbar .notification-button:hover { background:#fff; border-color:#a8bbc9; }
+.notification-badge { position:absolute; top:-9px; right:-9px; display:flex; align-items:center; justify-content:center; min-width:21px; height:21px; padding:0 4px; border:2px solid #f3f6f8; border-radius:12px; background:#c43c4a; color:white; font:650 11px/17px var(--font-ui); letter-spacing:-.03em; box-shadow:0 1px 3px rgba(135,31,44,.2); pointer-events:none; }
+.notification-count-heading { margin:0 0 5px; color:var(--ui-muted); font-size:12px; }
+@media(max-width:1100px) {
+  .business-metrics { gap:20px; }
+  .business-rankings { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:720px) {
+  .business-heading { align-items:center; gap:10px; }
+  .business-heading h1 { font-size:21px; }
+  .business-periods { gap:0; }
+  .business-periods .tab { font-size:11px; padding:7px 8px 10px; }
+  .business-tasks { padding:14px 14px 8px; }
+  .business-tasks-actions { gap:9px; }
+  .business-task-filters { gap:15px; }
+  .task-source-tabs .task-tab-count { font-size:11px; }
+  .task-page-heading .management-heading-main { flex-wrap:wrap; }
+  .task-page-heading .task-source-tabs { margin-left:auto; }
+  .business-tasks-header { grid-template-columns:minmax(0,1fr) 104px; gap:10px; }
+  .business-task-list-heading { display:none; }
+  .business-todo-list { margin-top:10px; }
+  .business-todo-row { grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; padding:11px 0; }
+  .business-todo-copy { grid-column:1; grid-row:1; }
+  .business-task-deadline { grid-column:1; grid-row:2; flex-direction:row; align-items:center; justify-content:flex-start; flex-wrap:wrap; gap:3px 8px; min-height:32px; }
+  .business-todo-row > .btn, .business-manual-check { grid-column:2; grid-row:1 / span 2; }
+  .business-due-button { width:fit-content; max-width:100%; }
+  .business-todo-row > .btn { min-height:40px; padding:8px 10px; }
+  .business-todo-row > .btn .icon { display:none; }
+  .business-task-meta { gap:2px 7px; }
+  .business-period-caption { flex-wrap:wrap; gap:4px; }
+  .business-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 22px; margin:20px 0 25px; }
+  .business-metric-value { font-size:27px; min-height:35px; margin:8px 0 5px; }
+  .business-metric-label { font-size:11px; }
+  .business-metric-value.is-unknown { font-size:22px; }
+  .business-comparison { font-size:10px; }
+  .business-chart { padding:10px 22px 20px 55px; }
+  .business-chart-plot { height:175px; }
+  .business-chart-tooltip { width:145px; padding:10px; }
+  .business-chart-tooltip > span { font-size:12px; }
+  .business-chart-grid > span { font-size:9px; right:calc(100% + 8px); }
+  .business-chart-empty { min-height:200px; }
+  .business-trend .section-header { padding-bottom:10px; }
+  .business-custom-range { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
+  .business-custom-range .ui-date { width:100%; min-width:0; }
+  .business-custom-range > .btn { grid-column:1 / -1; }
+  .business-data-note { font-size:11px; }
+  .topbar .topbar-right { gap:9px; }
+  .topbar .topbar-right > .notification-button { display:inline-flex; width:30px; height:30px; margin-right:6px; }
+}
+@media(prefers-reduced-motion:reduce) { .business-chart-tooltip { transition:none; } }
+.business-compare-period { display:inline-block; margin-left:12px; font-family:var(--font-ui); }
+.business-chart-axis.is-single { justify-content:center; }
+@media(max-width:720px) { .business-compare-period { margin-left:9px; } }
+.business-rankings { align-items:start; }
+.business-trend { overflow:hidden; }
+
+/* Personal records share one stable task toolbar; date headings fold the list. */
+.task-page-heading { align-items:center; flex-wrap:nowrap; }
+.task-page .task-toolbar { grid-template-columns:minmax(0,1fr) auto; align-items:center; }
+.task-page .business-task-filters { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; min-height:40px; }
+.task-page .business-todo-row { grid-template-columns:26px minmax(0,1fr) 100px 112px 108px; gap:10px; }
+.task-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:0; }
+.task-row-actions .icon-button { width:36px; height:36px; flex:0 0 36px; }
+.task-row-actions .icon-button .icon svg { width:16px; height:16px; }
+.task-row-actions .business-manual-check { width:36px; height:36px; flex:0 0 36px; }
+.task-row-actions .business-manual-check > span { width:16px; height:16px; box-sizing:border-box; border-width:1.25px; border-radius:3px; }
+.task-row-actions .business-manual-check .icon svg { width:12px; height:12px; }
+.task-title-edit { border:0; background:none; padding:0; color:var(--ui-text); font:550 13px/1.6 var(--font-ui); text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.is-completed .task-title-edit { color:var(--ui-muted); text-decoration:line-through; }
+.task-drag-handle { display:flex; align-items:center; justify-content:center; width:26px; min-height:40px; padding:0; border:0; background:none; color:#9ba9b1; cursor:grab; touch-action:none; }
+.task-drag-handle:active { cursor:grabbing; }
+.business-todo-row.is-dragging { opacity:.5; background:var(--ui-subtle); }
+.task-date-group { margin-top:12px; }
+.task-date-group + .task-date-group { border-top:1px solid var(--ui-border); padding-top:8px; }
+.task-date-heading { display:flex; align-items:center; gap:8px; min-height:38px; padding:0; width:100%; border:0; background:none; color:var(--ui-text); cursor:pointer; text-align:left; }
+.task-date-heading strong { font-size:12px; font-weight:600; }
+.task-date-heading > span:last-child { color:var(--ui-muted); font-size:11px; }
+.task-date-heading .icon svg { width:14px; height:14px; }
+.task-date-heading[aria-expanded="true"] .icon { transform:rotate(90deg); }
+.task-date-group > ul[hidden] { display:none; }
+@media(max-width:720px){
+ .task-page-heading .heading-actions { width:auto; margin-left:auto; }
+ .task-page .business-task-filters { gap:12px; }
+ .task-page .business-todo-row { grid-template-columns:22px minmax(0,1fr) 120px; gap:2px 8px; }
+ .task-page .business-todo-copy, .task-page .business-todo-title { display:contents; }
+ .task-page .task-title-edit { grid-column:2;grid-row:1; }
+ .task-page .task-author { grid-column:3;grid-row:1; justify-self:stretch; max-width:120px; align-self:start; margin:0; }
+ .task-page .business-task-description { grid-column:2;grid-row:2; }
+ .task-page .business-task-deadline { grid-column:2;grid-row:3; }
+ .task-page .task-drag-handle { grid-column:1;grid-row:1 / span 3;width:22px;min-height:48px; }
+ .task-page .task-row-actions { grid-column:3;grid-row:2 / span 2; align-self:center; }
+ .task-date-group .business-todo-list { margin-top:0; }
+}
+
+/* Fixed author column aligns avatars independently of title length. */
+.task-page .business-todo-row + .business-todo-row { border-top:1px solid var(--ui-border); }
+.task-page .business-todo-row > .task-author { min-width:0; }
+.task-page .business-todo-row.is-completed > .task-author { opacity:.5; }
+@media(max-width:720px) { .task-row-actions .icon-button, .task-row-actions .business-manual-check { width:40px; height:40px; flex-basis:40px; } }
+.task-author { display:flex; align-items:center; gap:6px; min-height:24px; margin-top:0; color:var(--ui-muted); font-size:12px; line-height:20px; }
+.task-author-avatar { position:relative; width:24px; height:24px; flex:none; display:grid; place-items:center; overflow:hidden; border-radius:5px; background:var(--ui-selected); color:var(--ui-accent); }
+.task-author-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.task-author-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; }
+.task-page .business-todo-title { gap:12px; align-items:center; }
+.task-author { flex:0 1 auto; }
+.task-page .business-todo-title .task-title-edit { min-width:0; }
+
+.task-row-actions .task-delete-button { color:var(--ui-muted); }
+.task-row-actions .task-delete-button:hover { color:#b54747; }
+
+/* Keep management page titles on one type scale across all first-level pages. */
+[data-portal-theme="blue"] .page-content .page-heading h1,
+[data-portal-theme="blue"] .page-content .management-heading h1 { font-size:23px; line-height:34px; }
+[data-portal-theme="blue"] .sidebar .nav-list.without-section-label { margin-top:10px; }
+@media(max-width:720px) {
+  [data-portal-theme="blue"] .page-content .page-heading h1,
+  [data-portal-theme="blue"] .page-content .management-heading h1 { font-size:21px; line-height:30px; }
+}

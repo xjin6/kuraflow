@@ -3,16 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-model.mjs",
-    "start": "node server.mjs",
-    "setup:local": "node scripts/setup-local-data.mjs",
-    "build:cloud": "node scripts/build-cloud.mjs",
+    "test": "node tests/model.test.mjs",
+    "start": "node scripts/dev/server.mjs",
+    "setup:local": "node scripts/dev/setup-local-data.mjs",
+    "build:cloud": "node scripts/build/build-cloud.mjs",
     "dev:cloud": "wrangler dev --local --var LOCAL_TEST:1 --port 8787",
-    "test:backend": "node --test backend/*.test.mjs",
+    "test:backend": "node --test tests/backend/*.test.mjs",
     "deploy:check": "npm run build:cloud && wrangler deploy --dry-run",
-    "dev:accounts": "npm run build:cloud && node scripts/dev-accounts.mjs",
-    "test:frontend": "node --test frontend/*.test.mjs",
-    "test:flow": "node --test scripts/flow-data.test.mjs scripts/flow-copilot.test.mjs scripts/flow-connections.test.mjs scripts/flow-archive.test.mjs scripts/flow-service.test.mjs frontend/flow-ui.test.mjs"
+    "dev:accounts": "npm run build:cloud && node scripts/dev/dev-accounts.mjs",
+    "test:frontend": "node --test tests/frontend/*.test.mjs",
+    "test:flow": "node --test tests/flow/*.test.mjs tests/frontend/flow-ui.test.mjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

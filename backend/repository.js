@@ -1,6 +1,6 @@
-import { KitchenModel, SALE_UNIT_OPTIONS } from '../data.js';
-import { resolveJapanAddress } from '../japan-addresses.js';
-import { deriveNotificationEvents } from '../notification-domain.js';
+import { KitchenModel, SALE_UNIT_OPTIONS } from '../src/shared/data.js';
+import { resolveJapanAddress } from '../src/shared/japan-addresses.js';
+import { deriveNotificationEvents } from '../src/shared/notification-domain.js';
 import { notificationStatements } from './notifications.js';
 
 const MAX_ACTIVE_ORDERS = 1000;

@@ -1,4 +1,4 @@
-import {createFlowDataTools, loadFlowSnapshot, FLOW_DATA_TOOL_DEFINITIONS} from '../scripts/flow-data.mjs';
+import {createFlowDataTools, loadFlowSnapshot, FLOW_DATA_TOOL_DEFINITIONS} from '../src/shared/flow-data.mjs';
 import {validateFlowArguments} from './flow-schema.js';
 
 export const flowToolDefinitions = FLOW_DATA_TOOL_DEFINITIONS;

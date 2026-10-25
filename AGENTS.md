@@ -24,6 +24,8 @@
 - 三端登录框顶部使用定稿包的「倉流」与 KuraFlow 浅底字标横向组合，沿用各端配色；汉字的可见左缘与登录标题首字对齐。手机组合按桌面的约 2/3 等比例缩小，保留相同的顶部占位，避免压过登录标题或改变三端框高。
 - 不加理念文化、宣传口号或无实际用途的解释文案。必要的字段提示、错误反馈和操作说明应简短具体。
 - 优先复用共享组件和样式。按钮、图标、下拉菜单、日历、悬浮框、弹窗的尺寸、间距、颜色、圆角、阴影和交互应保持一致，避免同功能多套实现。
+- 所有一级页面标题复用相同的标题容器，统一顶部间距、字号、字重和行高；不能因页面或功能名称（包括待办事项）而单独放大，也不能让裸 `h1` 的浏览器默认外边距改变页面起点。侧栏一级菜单文字保持统一字号、字重和行高。新增页面或修改页面时须对照其他一级页面复查桌面和手机的标题位置与菜单一致性。
+- 页面已有清晰的大标题时，顶部工具栏不再重复展示同名的小标题；平台端、管理端、门店端和订单详情都遵循这一规则。手机顶部保留带可访问名称的菜单按钮，状态和操作仍在原位。新增页面先检查是否出现重复标题。
 - 平台客户和门店的「卡片视图」复用管理端门店列表的方形卡片：相同网格列宽、基础高度、内边距、头像及底部操作排布，少量记录也不拉满整行。完整账号资料通过详情查看，避免撑大概览卡片；列表视图保留紧凑排布。
 - 门店卡片图片放在右侧并适当放大，启用等状态紧邻店名；店名下显示完整配送地址，信息区不重复列地址。管理端员工管理采用文字入口，不使用小人图标，沿用原权限。管理端与平台端门店卡片共用结构。个人和组织头像适度放大以便识别，保持原页面结构、账号权限和头像编辑流程。
 - 切换 tab 或条件显示按钮时，标题、筛选工具栏、操作槽和列表起点应保持稳定，不能因某页多一个“新增”按钮而跳动。为条件操作预留一致尺寸；隐藏占位不得可点击或进入键盘焦点。手机筛选过长时在固定区域内滚动，避免换行撑高工具栏；验收同时比较桌面和 420×912 下的高度与位置。
@@ -79,9 +81,12 @@
 ## 项目入口与常用命令
 
 - 前端为原生 JavaScript / CSS；后端为 Cloudflare Worker，使用 D1 与 KV。
-- `app.js`：业务界面；`cloud-bootstrap.js`：线上登录和启动；`platform-app.js`：平台界面；`accounts-ui.js`：账号管理。
+- 新增文件按职责放入 `src/app/`、`src/features/<功能>/`、`src/shared/`、`src/ui/`、`src/styles/`、`backend/`、`tests/` 或 `scripts/` 子目录。根目录只保留入口 HTML、项目配置和主文档；不要重新把功能源码、样式、截图或临时数据平铺在根目录。完整结构见 `docs/repository-layout.md`。
+- 真实本地种子在 `private-preview/data/business-data.js`，由 `src/shared/business-data.js` 边界模块读取；正式浏览器和 Worker 构建必须替换为空种子，不能把私有文件纳入公开资产。
+- `scripts/lib/project-paths.mjs` 集中声明源码、样式与旧静态 URL 的映射。调整磁盘目录时保留已发布 URL、CSS 加载顺序和本地持久化目录。
+- `src/app/app.js`：业务界面；`src/app/cloud-bootstrap.js`：线上登录和启动；`src/app/platform-app.js`：平台界面；`src/features/accounts/accounts-ui.js`：账号管理。
 - `backend/accounts.js`、`backend/repository.js`、`backend/worker.js`：账号、业务存储与 API。
-- `ui-system.css`、`ui-controls.css`、`visual-refresh.css` 及功能样式：共享视觉与控件。改样式先查现有规则，避免不断叠加互相覆盖的补丁。
+- `src/styles/ui-system.css`、`src/styles/ui-controls.css`、`src/styles/visual-refresh.css` 及功能样式：共享视觉与控件。改样式先查现有规则，避免不断叠加互相覆盖的补丁。
 - `npm start`：4173 静态演示；`npm run dev:accounts`：8787 本地账号与后端。两者数据来源不同，不把 4173 的 localStorage 当作线上数据库。
 - `npm run test:frontend`：前端 DOM 回归；`npm run test:backend`：后端测试；`npm test`：业务模型测试。
 - `npm run build:cloud`：正式前端构建；项目内 Wrangler 的 `deploy --dry-run`：发布包检查。正式发布路径见当前发布文档。

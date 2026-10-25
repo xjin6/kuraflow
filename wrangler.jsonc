@@ -47,7 +47,7 @@
   },
   "account_id": "416d8e8c519ddc0a60ead4fc98a2ae14",
   "alias": {
-    "./business-data.js": "./cloud-seed.js"
+    "./business-data.js": "./src/shared/cloud-seed.js"
   },
   "preview_urls": false
 }

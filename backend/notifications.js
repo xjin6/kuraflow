@@ -1,4 +1,4 @@
-import { notificationCurrentStatus } from '../notification-domain.js';
+import { notificationCurrentStatus } from '../src/shared/notification-domain.js';
 
 const PAGE_SIZE = 50;
 const fail = (message, status = 400, code = 'INVALID_NOTIFICATION') => {

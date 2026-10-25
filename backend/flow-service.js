@@ -1,5 +1,5 @@
 import {createAttachmentStore,attachmentContext} from './flow-attachments.js';
-import {cleanAttachmentRefs} from '../flow-attachment-data.js';
+import {cleanAttachmentRefs} from '../src/shared/flow-attachment-data.js';
 import {getIdentity} from './accounts.js';
 import {createFlowDataContext, flowToolDefinitions, runFlowTool} from './flow-tools.js';
 import {buildFlowSystemPrompt} from './flow-prompt.js';

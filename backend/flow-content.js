@@ -1,4 +1,4 @@
-import {cleanAttachmentRefs} from '../flow-attachment-data.js';
+import {cleanAttachmentRefs} from '../src/shared/flow-attachment-data.js';
 import {SaxesParser} from 'saxes';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;

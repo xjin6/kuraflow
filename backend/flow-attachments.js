@@ -1,4 +1,4 @@
-import {FLOW_ATTACHMENT_LIMITS as limits,attachmentId,cleanAttachmentRefs} from '../flow-attachment-data.js';
+import {FLOW_ATTACHMENT_LIMITS as limits,attachmentId,cleanAttachmentRefs} from '../src/shared/flow-attachment-data.js';
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status,publicError:true});};
 const encoder=new TextEncoder();
 function actor(p){if(p?.role!=='admin'||p.storeId||!p.tenantId||!p.userId)fail('附件仅供当前管理账号使用。',403);return[p.tenantId,p.userId];}

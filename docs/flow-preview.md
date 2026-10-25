@@ -2,7 +2,7 @@
 
 Flow 是仅供管理端使用的侧边助手，基础版本已部署到正式站点。“平台统一配置”改动已于 2026-10-19 发布。平台提供按厨房的功能配置，不提供聊天；门店不显示 Flow。正式环境的对话、图片与加密授权保存在 D1。
 
-入口：`http://localhost:8787/?page=overview&flow=1`。首次使用本地账号页的一键进入；登录后点击右上角通知旁的彩色 Flow 图标，桌面和手机均直接显示。图标使用共享矢量资源 `flow-mark.svg`。
+入口：`http://localhost:8787/?page=overview&flow=1`。首次使用本地账号页的一键进入；登录后点击右上角通知旁的彩色 Flow 图标，桌面和手机均直接显示。图标使用共享矢量资源 `public/icons/flow-mark.svg`。
 
 独立手机尺寸预览：`http://localhost:8787/__local-preview/phone?page=overview&flow=1`，以 420×912 CSS 视口显示真实页面，不改变桌面标签页尺寸。仅本地服务器允许页面由同源预览框加载，正式站点的框架限制保持原样。
 
@@ -61,13 +61,13 @@ Flow 已接入受控业务写入：新增、修改及删除门店，新增、删
 
 ## 代码入口
 
-- `flow-ui.js` / `flow-ui.css`：独立侧栏、流式 UI、来源和开通状态。
+- `src/features/flow/flow-ui.js` / `src/styles/flow-ui.css`：独立侧栏、流式 UI、来源和开通状态。
 - `backend/flow-control.js`：平台功能配置、固定模型和权限策略。
-- `scripts/flow-local-runtime.mjs`：本地与共享权限服务衔接、SDK 适配及旧连接保留。
-- `scripts/flow-copilot.mjs`：官方 SDK、自定义工具白名单与每轮独立会话。
+- `scripts/flow/flow-local-runtime.mjs`：本地与共享权限服务衔接、SDK 适配及旧连接保留。
+- `scripts/flow/flow-copilot.mjs`：官方 SDK、自定义工具白名单与每轮独立会话。
 - `backend/flow-provider.js` / `flow-store.js`：实时模型目录、缓存、Token 加密存储。
-- `scripts/flow-archive.mjs`：私有对话保存、乐观版本控制、软删除及安全 SVG 图片。
-- `scripts/flow-data.mjs` / `backend/flow-tools.js`：租户绑定索引、完整历史与只读工具。
+- `scripts/flow/flow-archive.mjs`：私有对话保存、乐观版本控制、软删除及安全 SVG 图片。
+- `src/shared/flow-data.mjs` / `backend/flow-tools.js`：租户绑定索引、完整历史与只读工具。
 - `backend/flow-actions.js` / `flow-schema.js`：受控写入、地址查询、参数校验、保存回执及重试恢复。
 - `backend/flow-prompt.js`：业务助手系统规则。
 
@@ -81,12 +81,12 @@ Flow 已接入受控业务写入：新增、修改及删除门店，新增、删
 
 ## 当前验证
 
-业务写入使用隔离的真实 D1 和模拟模型工具调用验证，包括门店与负责人开通、修改资料、库存报价、手动待办、失败回滚、撤销授权与写入竞争、断线去重、共享 HTTP 路径和本地 SDK 适配入口。相关回归见 `backend/flow-actions.test.mjs`、`frontend/flow-ui.test.mjs` 及两套对话存储测试。未向生产业务数据添加验收门店。
+业务写入使用隔离的真实 D1 和模拟模型工具调用验证，包括门店与负责人开通、修改资料、库存报价、手动待办、失败回滚、撤销授权与写入竞争、断线去重、共享 HTTP 路径和本地 SDK 适配入口。相关回归见 `tests/backend/flow-actions.test.mjs`、`tests/frontend/flow-ui.test.mjs` 及两套对话存储测试。未向生产业务数据添加验收门店。
 
 Flow 数据、连接、对话持久化、图片、会话权限及前端交互均有针对性测试；未登录、门店、平台身份及跨站请求均被拦截。真实 Copilot 问答已调用工具并核实 146 个商品、5 家门店、本月无已送达订单，以及未设置库存的商品数量；来源可回到页面核对。模型的分析阶段不会传给聊天界面，最终回答会替换中间输出。
 
 历史图片与对话保留。当前独立连接已实际返回 18 个 GitHub Copilot 模型；已通过最小回复和调用绘图工具的完整请求验证，流程图请求返回了图片与最终回答。没有读取或复用其他应用凭据。
 
-运行 `npm run test:flow` 复查 Flow 测试。平台权限、模型目录缓存和本地衔接另有 `backend/flow-control.test.mjs`、`backend/flow-provider*.test.mjs`、`scripts/flow-local-runtime.test.mjs` 与 `frontend/platform-flow.test.mjs`。当前线上版本与发布验证见 `docs/cloud-deployment-status.md`。
+运行 `npm run test:flow` 复查 Flow 测试。平台权限、模型目录缓存和本地衔接另有 `tests/backend/flow-control.test.mjs`、`backend/flow-provider*.test.mjs`、`tests/flow/flow-local-runtime.test.mjs` 与 `tests/frontend/platform-flow.test.mjs`。当前线上版本与发布验证见 `docs/cloud-deployment-status.md`。
 
 三端登录设计预览可在本机使用 `?login=kitchen&loginPreview=1`、`?login=platform&loginPreview=1`、`?login=store&loginPreview=1`；只展示真实表单，不退出当前会话。手机包装页也支持该参数，正式站点不具备此开发便利功能。
