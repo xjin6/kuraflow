@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
-import {handlePlatformFlow,getFlowPolicy} from '../../backend/flow-control.js';
+import {handlePlatformFlow,getFlowPolicy,getUIFeatures} from '../../backend/flow-control.js';
 import {createFlowStore} from '../../backend/flow-store.js';
+import worker from '../../backend/worker.js';
+import {hashToken} from '../../backend/auth.js';
 
 const ORIGIN='https://flow.example.test',platform={role:'platform',accountRole:'owner',userId:'platform-owner',displayName:'Platform Owner'};
 const migrationDir=new URL('../../backend/migrations/',import.meta.url);
@@ -14,6 +16,7 @@ class D1 {
     for(const id of ['tenant-a','tenant-b'])this.sqlite.prepare('INSERT INTO tenants(id,name,core_json) VALUES(?,?,?)').run(id,'Kitchen '+id,'{"stores":[]}');
     if(seed)this.sqlite.prepare('INSERT INTO flow_connections(tenant_id,data_cipher,version,updated_at) VALUES(?,?,1,?)').run('tenant-a','seed-cipher','2026-10-19');
     this.sqlite.exec(readFileSync(new URL('0008_tenant_features.sql',migrationDir),'utf8'));
+    for(const file of readdirSync(migrationDir).filter(name=>name.endsWith('.sql')&&name>'0008_tenant_features.sql').sort())this.sqlite.exec(readFileSync(new URL(file,migrationDir),'utf8'));
   }
   prepare(sql) {
     const db=this.sqlite;
@@ -143,4 +146,60 @@ test('mutations reject bad origins and unexpected fields; errors never expose pr
   h.provider.status=async()=>{throw Object.assign(new Error('错误 gho_PRIVATE_SECRET /Users/name/file'),{status:503});};
   const text=await (await h.handle(request('?tenant=tenant-a'))).text();assert.doesNotMatch(text,/PRIVATE|\/Users/);
   assert.equal((await h.handle(request('/connection',{tenantId:'tenant-a',token:'x',model:'model-a'}))).status,400);
+});
+
+test('multilingual defaults off, uses the shared version, and remains independent of Flow credentials',async()=>{
+  const h=harness();
+  const initial=await (await h.handle(request('?tenant=tenant-a'))).json();assert.deepEqual(initial.multilingual,{enabled:false});
+  const response=await h.handle(request('',{tenantId:'tenant-a',version:1,enabled:false,multilingualEnabled:true}));assert.equal(response.status,200);
+  const saved=await response.json();assert.equal(saved.version,2);assert.deepEqual(saved.multilingual,{enabled:true});assert.deepEqual(saved.flow,{enabled:false,model:null});
+  assert.equal((await getUIFeatures(h.env,{role:'admin',tenantId:'tenant-a',userId:'admin-a'})).multilingualEnabled,true);
+  assert.equal((await getUIFeatures(h.env,{role:'store',tenantId:'tenant-a',storeId:'store-a',userId:'store-a'})).multilingualEnabled,true);
+  assert.deepEqual(await getUIFeatures(h.env,{role:'admin',tenantId:'tenant-b',userId:'admin-b'}),{flowEnabled:false,multilingualEnabled:false,notificationsEnabled:true,version:1});
+  assert.equal(h.env.DB.get("SELECT count(*) AS total FROM account_audit WHERE action='ui.multilingual.enable'").total,1);
+  // Repeatable migration never resets configured tenants.
+  h.env.DB.sqlite.exec(readFileSync(new URL('0014_multilingual.sql',migrationDir),'utf8'));
+  assert.equal((await getUIFeatures(h.env,{role:'admin',tenantId:'tenant-a',userId:'admin-a'})).multilingualEnabled,true);
+});
+
+test('language-only save preserves enabled Flow when its connection is unavailable, and legacy writes preserve language',async()=>{
+  const h=harness();await h.connect();await h.handle(request('',{tenantId:'tenant-a',version:1,enabled:true,model:'model-a'}));
+  const cipher=h.env.DB.get('SELECT data_cipher FROM flow_connections WHERE tenant_id=?','tenant-a').data_cipher;
+  h.provider.status=async()=>{throw new Error('provider offline');};
+  const response=await h.handle(request('',{tenantId:'tenant-a',version:2,enabled:true,multilingualEnabled:true}));assert.equal(response.status,200);
+  const saved=await response.json();assert.deepEqual(saved.flow,{enabled:true,model:'model-a'});assert.deepEqual(saved.multilingual,{enabled:true});
+  assert.equal(h.env.DB.get('SELECT data_cipher FROM flow_connections WHERE tenant_id=?','tenant-a').data_cipher,cipher);
+  const legacy=await h.handle(request('',{tenantId:'tenant-a',version:3,enabled:false}));assert.equal(legacy.status,200);assert.equal((await legacy.json()).multilingual.enabled,true);
+});
+
+test('language changes reject stale versions, non-platform actors and invalid input without partial saves',async()=>{
+  const h=harness();
+  for(const auth of ['admin','store','member'])assert.equal((await h.handle(request('',{tenantId:'tenant-a',version:1,enabled:false,multilingualEnabled:true},{'X-Test-Auth':auth}))).status,403);
+  for(const multilingualEnabled of ['true',1,null])assert.equal((await h.handle(request('',{tenantId:'tenant-a',version:1,enabled:false,multilingualEnabled}))).status,400);
+  assert.equal((await h.handle(request('',{tenantId:'tenant-a',version:0,enabled:false,multilingualEnabled:true}))).status,409);
+  assert.equal((await h.handle(request('',{tenantId:'tenant-a',version:1,enabled:true,model:'model-a',multilingualEnabled:true}))).status,409);
+  assert.equal(h.env.DB.get('SELECT count(*) AS total FROM tenant_ui_features').total,0);
+  const results=await Promise.all([true,false].map(multilingualEnabled=>h.handle(request('',{tenantId:'tenant-a',version:1,enabled:false,multilingualEnabled}))));assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+  assert.equal((await getFlowPolicy(h.env,'tenant-a')).version,2);assert.equal((await getFlowPolicy(h.env,'tenant-b')).version,1);
+});
+
+test('UI feature HTTP endpoint requires a valid session and ignores attempts to select another tenant',async()=>{
+  const h=harness(),db=h.env.DB,stamp=Math.floor(Date.now()/1000);
+  for(const tenantId of ['tenant-a','tenant-b']){
+    db.sqlite.prepare('INSERT INTO organizations(tenant_id,code,created_at) VALUES(?,?,?)').run(tenantId,'ORG-'+tenantId,stamp);
+    db.sqlite.prepare('UPDATE tenants SET core_json=? WHERE id=?').run(JSON.stringify({stores:[{id:'store-a',name:'Store A'}]}),tenantId);
+  }
+  db.sqlite.prepare('INSERT INTO tenant_ui_features(tenant_id,multilingual_enabled,updated_at) VALUES(?,1,?)').run('tenant-a',new Date().toISOString());
+  async function account(role,tenantId=null,storeId=null){
+    const id=crypto.randomUUID(),token=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');
+    db.sqlite.prepare("INSERT INTO staff_accounts(id,login_id,tenant_id,store_id,role,account_role,name,contact,status,created_at) VALUES(?,?,?,?,?,'owner','Name','','active',?)").run(id,id,tenantId,storeId,role,stamp);
+    db.sqlite.prepare('INSERT INTO account_sessions(hash,account_id,expires,version) VALUES(?,?,?,0)').run(await hashToken(token),id,stamp+3600);
+    return '__Host-kuraflow_account='+token;
+  }
+  const admin=await account('admin','tenant-a'),store=await account('store','tenant-a','store-a'),other=await account('admin','tenant-b'),platformCookie=await account('platform');
+  const call=(cookie='',query='')=>worker.fetch(new Request(ORIGIN+'/api/ui-features'+query,{headers:{Cookie:cookie}}),h.env,{});
+  assert.equal((await call()).status,401);
+  for(const cookie of [admin,store]){const result=await call(cookie,'?tenant=tenant-b');assert.equal(result.status,200);assert.deepEqual(await result.json(),{flowEnabled:false,multilingualEnabled:true,notificationsEnabled:true,version:1});}
+  assert.deepEqual(await (await call(other,'?tenant=tenant-a')).json(),{flowEnabled:false,multilingualEnabled:false,notificationsEnabled:true,version:1});
+  assert.deepEqual(await (await call(platformCookie)).json(),{flowEnabled:false,multilingualEnabled:true,notificationsEnabled:true,version:1});
 });

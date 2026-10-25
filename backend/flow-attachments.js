@@ -1,7 +1,8 @@
 import {FLOW_ATTACHMENT_LIMITS as limits,attachmentId,cleanAttachmentRefs} from '../src/shared/flow-attachment-data.js';
+import {flowStorageScope} from './flow-scope.js';
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status,publicError:true});};
 const encoder=new TextEncoder();
-function actor(p){if(p?.role!=='admin'||p.storeId||!p.tenantId||!p.userId)fail('附件仅供当前管理账号使用。',403);return[p.tenantId,p.userId];}
+const actor=flowStorageScope;
 export function checkedAttachmentImage(image){
   if(!image||image.mimeType!=='image/jpeg'||typeof image.data!=='string'||image.data.length>300000||!/^\/[A-Za-z0-9+/]+={0,2}$/.test(image.data)||image.data.length%4)fail('附件图片格式或大小不正确。');
   const bytes=Uint8Array.from(atob(image.data),c=>c.charCodeAt(0));

@@ -2,6 +2,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 export const projectRoot=path.resolve(fileURLToPath(new URL('../../',import.meta.url)));
 export const browserSources={
+  "topbar-tools.js": "src/ui/topbar-tools.js",
+  "portal-feature-fields.js": "src/features/accounts/portal-feature-fields.js",
   "app.js": "src/app/app.js",
   "cloud-bootstrap.js": "src/app/cloud-bootstrap.js",
   "platform-app.js": "src/app/platform-app.js",
@@ -34,6 +36,7 @@ export const browserSources={
   "japan-addresses.js": "src/shared/japan-addresses.js"
 };
 export const styleSources={
+  "i18n.css": "src/styles/i18n.css",
   "pricing-ui.css": "src/styles/pricing-ui.css",
   "settlement.css": "src/styles/settlement.css",
   "sidebar-brand.css": "src/styles/sidebar-brand.css",

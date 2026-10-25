@@ -1,5 +1,6 @@
 import {modelAttachments} from './flow-attachments.js';
 import {flowToolFailure} from './flow-schema.js';
+import {flowConnectionScope} from './flow-scope.js';
 // Worker-native Copilot transport. All credentials belong to the current kitchen
 // and stay in the encrypted store; this module never starts a local runtime.
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
@@ -17,10 +18,7 @@ const safeGitHubToken = value => typeof value === 'string' && /^[a-zA-Z0-9_.-]{1
 const safeBearer = value => typeof value === 'string' && /^[\x21-\x7e]{16,16384}$/.test(value);
 const publicPhase = value => value == null || PUBLIC_PHASES.has(String(value).toLowerCase());
 const problem = (code, message, status = 502) => Object.assign(new Error(message), {code, status});
-function scope(principal, owner = false) {
-  if (!principal || principal.role !== 'admin' || principal.storeId || typeof principal.tenantId !== 'string' || !principal.tenantId || typeof principal.userId !== 'string' || !principal.userId) throw problem('FLOW_FORBIDDEN', '请先登录管理端。', 403);
-  if (owner && principal.accountRole !== 'owner') throw problem('FLOW_FORBIDDEN', '请由负责人设置模型连接。', 403);
-}
+function scope(principal, owner = false) {flowConnectionScope(principal,owner);}
 function abortError() { return problem('FLOW_ABORTED', '已停止回答。', 499); }
 function checkAbort(signal) { if (signal?.aborted) throw abortError(); }
 async function pause(milliseconds, signal) {

@@ -1,8 +1,10 @@
 import {createFlowDataTools, loadFlowSnapshot, FLOW_DATA_TOOL_DEFINITIONS} from '../src/shared/flow-data.mjs';
 import {validateFlowArguments} from './flow-schema.js';
+import {createPortalFlowDataContext} from './flow-portal-data.js';
 
 export const flowToolDefinitions = FLOW_DATA_TOOL_DEFINITIONS;
 export async function createFlowDataContext(db, principal) {
+  if(principal?.role==='platform'||principal?.role==='store')return createPortalFlowDataContext(db,principal);
   const context={stale:true,async reload() {
     context.stale=true;
     const snapshot=await loadFlowSnapshot(db,principal),state=snapshot.state;
@@ -14,6 +16,7 @@ export async function createFlowDataContext(db, principal) {
 }
 export async function runFlowTool(context,name,args) {
   if(!args || typeof args!=='object' || Array.isArray(args))throw new Error('查询参数不正确。');
+  if(context.execute)return context.execute(name,args);
   const definition=flowToolDefinitions.find(tool=>tool.name===name);
   if(!definition)throw new Error('不支持这项查询。');
   validateFlowArguments(definition.parameters,args);

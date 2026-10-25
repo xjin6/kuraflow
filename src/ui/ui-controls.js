@@ -1,5 +1,8 @@
+import {t, tx, ta, setI18nText, getLocale} from "../i18n/index.js";
+let selectInitialized=false,dateInitialized=false;
 // Keep native form values and validation while rendering one shared select UI.
 export function initSelectControls() {
+  if(selectInitialized)return;selectInitialized=true;
   initDateControls();
   const controls = new Map();
   let sequence = 0, opened = null, typeBuffer = '', typeTimer;
@@ -24,7 +27,7 @@ export function initSelectControls() {
     const option = select.selectedOptions[0];
     const label = select.getAttribute('aria-label') || [...select.labels].map(el => el.textContent.trim()).join(' ') || '选择';
     control.label = label;
-    text.textContent = option?.textContent || '请选择';
+    setI18nText(text, () => (option?.textContent || t("请选择")), "textContent");
     trigger.disabled = select.disabled;
     trigger.setAttribute('aria-label', label);
     trigger.setAttribute('aria-required', String(select.required));
@@ -96,7 +99,7 @@ export function initSelectControls() {
     });
     const enabled = [...control.list.querySelectorAll('[role="option"]:not([aria-disabled="true"])')];
     if (!control.list.childElementCount) {
-      const empty = document.createElement('div'); empty.className = 'ui-select-empty'; empty.textContent = '没有匹配项';
+      const empty = document.createElement('div'); empty.className = 'ui-select-empty'; setI18nText(empty, () => t("没有匹配项"), "textContent");
       control.list.append(empty);
     }
     const next = enabled.find(el => Number(el.dataset.index) === control.active) || enabled.find(el => el.getAttribute('aria-selected') === 'true') || enabled[0];
@@ -116,8 +119,8 @@ export function initSelectControls() {
     if (control.select.options.length > 10) {
       const searchWrap = document.createElement('div'); searchWrap.className = 'ui-select-search';
       searchWrap.innerHTML = svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>');
-      const search = document.createElement('input'); search.type = 'search'; search.placeholder = '搜索选项';
-      search.setAttribute('aria-label', `搜索${control.label}`); search.setAttribute('role', 'combobox');
+      const search = document.createElement('input'); search.type = 'search'; setI18nText(search, () => t("搜索选项"), "placeholder");
+      search.setAttribute('aria-label', t('搜索{0}',[control.label])); search.setAttribute('role', 'combobox');
       search.setAttribute('aria-controls', list.id); search.setAttribute('aria-expanded', 'true'); search.setAttribute('aria-autocomplete', 'list');
       search.addEventListener('input', () => renderOptions(control));
       search.addEventListener('keydown', event => keydown(event, control));
@@ -223,6 +226,7 @@ export function initSelectControls() {
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'required', 'selected', 'aria-label', 'aria-invalid', 'label'] });
   document.addEventListener('change', event => { if (controls.has(event.target)) sync(controls.get(event.target)); }, true);
   document.addEventListener('reset', () => queueMicrotask(() => controls.forEach(sync)));
+  document.addEventListener('kuraflow:language-change',()=>{close();controls.forEach(sync);});
   document.addEventListener('pointerdown', event => { if (opened && !opened.wrapper.contains(event.target) && !opened.menu.contains(event.target)) close(); }, true);
   document.addEventListener('focusin', event => { if (opened && !opened.wrapper.contains(event.target) && !opened.menu.contains(event.target)) close(); });
   document.addEventListener('click', event => {
@@ -240,6 +244,7 @@ export function initSelectControls() {
 // A shared calendar keeps date entry consistent with the rest of the interface.
 // Native inputs remain the source of truth for forms and existing change handlers.
 export function initDateControls() {
+  if(dateInitialized)return;dateInitialized=true;
   if (document.documentElement.dataset.dateControlsReady) return;
   document.documentElement.dataset.dateControlsReady = 'true';
   const controls = new Map();
@@ -262,7 +267,7 @@ export function initDateControls() {
   const clamp = (control, value) => control.input.min && value < control.input.min ? control.input.min : control.input.max && value > control.input.max ? control.input.max : value;
   const dateLabel = value => {
     const date = parse(value);
-    return date ? `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日` : '';
+    return date ? new Intl.DateTimeFormat(getLocale(),{year:'numeric',month:'long',day:'numeric'}).format(date) : '';
   };
 
   function close(restoreFocus = false) {
@@ -283,7 +288,7 @@ export function initDateControls() {
       return copy.textContent.trim();
     }).join(' ') || '选择日期';
     control.label = label;
-    control.text.textContent = input.value ? input.value.replaceAll('-', ' / ') : '选择日期';
+    setI18nText(control.text, () => (input.value ? input.value.replaceAll('-', ' / ') : t("选择日期")), "textContent");
     trigger.disabled = input.disabled || input.readOnly;
     trigger.setAttribute('aria-label', `${label}${input.value ? '，' + dateLabel(input.value) : ''}`);
     trigger.setAttribute('aria-required', String(input.required));
@@ -326,11 +331,11 @@ export function initDateControls() {
   function renderCalendar(control, focusDay = false) {
     const { input, menu, month } = control;
     const year = month.getFullYear(), monthIndex = month.getMonth(), todayValue = today();
-    const monthLabel = `${year}年 ${monthIndex + 1}月`;
+    const monthLabel = new Intl.DateTimeFormat(getLocale(),{year:'numeric',month:'long'}).format(month);
     const prevEnd = iso(new Date(year, monthIndex, 0, 12));
     const nextStart = iso(new Date(year, monthIndex + 1, 1, 12));
     const previouslyFocused = menu.contains(document.activeElement) ? document.activeElement.dataset.calendarAction : null;
-    menu.innerHTML = `<div class="ui-calendar-header"><button type="button" class="ui-calendar-nav" data-calendar-action="previous" aria-label="上个月" ${input.min && prevEnd < input.min ? 'disabled' : ''}>${arrowIcon(-1)}</button><strong id="${control.uid}-title" aria-live="polite">${monthLabel}</strong><button type="button" class="ui-calendar-nav" data-calendar-action="next" aria-label="下个月" ${input.max && nextStart > input.max ? 'disabled' : ''}>${arrowIcon(1)}</button></div><div class="ui-calendar-grid" role="grid" aria-labelledby="${control.uid}-title"><div class="ui-calendar-week" role="row">${['一', '二', '三', '四', '五', '六', '日'].map(day => `<span role="columnheader" aria-label="星期${day}">${day}</span>`).join('')}</div></div><div class="ui-calendar-footer">${input.required ? '' : `<button type="button" data-calendar-action="clear" ${!input.value ? 'disabled' : ''}>清空</button>`}<button type="button" data-calendar-action="today" ${allowed(control, todayValue) ? '' : 'disabled'}>今天</button></div>`;
+    menu.innerHTML = `<div class="ui-calendar-header"><button type="button" class="ui-calendar-nav" data-calendar-action="previous" ${ta("aria-label", "上个月")} ${input.min && prevEnd < input.min ? 'disabled' : ''}>${arrowIcon(-1)}</button><strong id="${control.uid}-title" aria-live="polite">${monthLabel}</strong><button type="button" class="ui-calendar-nav" data-calendar-action="next" ${ta("aria-label", "下个月")} ${input.max && nextStart > input.max ? 'disabled' : ''}>${arrowIcon(1)}</button></div><div class="ui-calendar-grid" role="grid" aria-labelledby="${control.uid}-title"><div class="ui-calendar-week" role="row">${[0,1,2,3,4,5,6].map(index=>{const day=new Date(2026,9,19+index,12);return `<span role="columnheader" aria-label="${new Intl.DateTimeFormat(getLocale(),{weekday:'long'}).format(day)}">${new Intl.DateTimeFormat(getLocale(),{weekday:'short'}).format(day)}</span>`;}).join('')}</div></div><div class="ui-calendar-footer">${(input.required ? '' : `<button type="button" data-calendar-action="clear" ${!input.value ? 'disabled' : ''}>${tx("清空")}</button>`)}<button type="button" data-calendar-action="today" ${allowed(control, todayValue) ? '' : 'disabled'}>${tx("今天")}</button></div>`;
     const grid = menu.querySelector('.ui-calendar-grid');
     const first = new Date(year, monthIndex, 1, 12), offset = (first.getDay() + 6) % 7;
     for (let week = 0; week < 6; week += 1) {
@@ -340,7 +345,7 @@ export function initDateControls() {
         const button = document.createElement('button');
         button.type = 'button'; button.className = 'ui-calendar-day'; button.textContent = date.getDate();
         button.dataset.date = value; button.setAttribute('role', 'gridcell');
-        button.setAttribute('aria-label', `${dateLabel(value)}，星期${['日', '一', '二', '三', '四', '五', '六'][date.getDay()]}`);
+        button.setAttribute('aria-label',new Intl.DateTimeFormat(getLocale(),{year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(date));
         button.setAttribute('aria-selected', String(value === input.value));
         button.disabled = !allowed(control, value); button.tabIndex = value === control.active ? 0 : -1;
         if (value === todayValue) button.setAttribute('aria-current', 'date');
@@ -450,6 +455,7 @@ export function initDateControls() {
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'readonly', 'required', 'value', 'min', 'max', 'aria-label', 'aria-invalid', 'aria-describedby'] });
   document.addEventListener('change', event => { if (controls.has(event.target)) sync(controls.get(event.target)); }, true);
   document.addEventListener('reset', () => queueMicrotask(() => controls.forEach(sync)));
+  document.addEventListener('kuraflow:language-change',()=>{close();controls.forEach(sync);});
   document.addEventListener('pointerdown', event => { if (opened && !opened.wrapper.contains(event.target) && !opened.menu.contains(event.target)) close(); }, true);
   document.addEventListener('focusin', event => { if (opened && !opened.wrapper.contains(event.target) && !opened.menu.contains(event.target)) close(); });
   document.addEventListener('click', event => {

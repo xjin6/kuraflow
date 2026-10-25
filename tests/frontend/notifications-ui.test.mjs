@@ -221,11 +221,50 @@ test('repeated read actions during a save do not send duplicate writes',async t=
 test('disabled portals cannot open, refresh or act on notifications',async t=>{
   const {ui,act,listCalls,readCalls,modals}=fixture(t,{enabled:()=>false});
   await ui.open();await ui.refresh();
-  await assert.rejects(act('notification-read-all'),/仅供管理端/);
+  await assert.rejects(act('notification-read-all'),/尚未开启/);
   assert.equal(await act('unrelated-action'),false);
   assert.deepEqual(listCalls,[]);
   assert.deepEqual(readCalls,[]);
   assert.deepEqual(modals,[]);
+});
+
+test('disabling an open portal clears loaded notices, badges and late responses',async t=>{
+  let enabled=true,calls=0;const delayed=deferred();
+  const {document,ui,counts}=fixture(t,{enabled:()=>enabled,list:async()=>++calls===1?response([event(1)]):delayed.promise});
+  await ui.open();
+  const refresh=ui.refresh({force:true});
+  enabled=false;await ui.refresh();
+  delayed.resolve(response([event(2)]));await refresh;
+  assert.equal(document.querySelector('.notification-event'),null);
+  assert.match(document.querySelector('.notifications-empty').textContent,/通知功能尚未开启/);
+  assert.equal(ui.getUnreadCount(),0);
+  assert.equal(counts.at(-1),0);
+});
+
+test('platform customer/team notices use the shared center and preserve their destinations',async t=>{
+  const {document,ui,act,navigations}=fixture(t,{list:async()=>response([
+    event(12,{targetType:'customer',targetId:'tenant-a',tenantId:'tenant-a',titleKey:'客户配置已更新',bodyKey:'客户：{0}',bodyParams:['原始客户名'],body:'ignored'}),
+    event(11,{targetType:'team',targetId:'platform',titleKey:'已添加管理员',bodyKey:'平台员工',bodyParams:[]}),
+  ])});
+  await ui.open();
+  assert.deepEqual([...document.querySelectorAll('[data-action="notification-open"]')].map(node=>node.textContent),['查看客户','员工管理']);
+  assert.equal(document.querySelector('.notification-event-heading strong').textContent,'客户配置已更新');
+  assert.equal(document.querySelector('.notification-event-content p').textContent,'客户：原始客户名');
+  await act('notification-open',{notification:'12'});
+  assert.equal(navigations[0].tenantId,'tenant-a');
+});
+
+test('store structured messages escape original order identifiers and do not render private fallback text',async t=>{
+  const hostile='<img src=x onerror="window.pwned=true">';
+  const {document,window,ui}=fixture(t,{list:async()=>response([event(10,{
+    titleKey:'订单已提交',bodyKey:'订单 {0} · 配送日期 {1}',bodyParams:[hostile,'2026-10-25'],body:'PRIVATE NOTE',
+  })])});
+  await ui.open();
+  assert.equal(document.querySelector('.notification-event-heading strong').textContent,'订单已提交');
+  assert.equal(document.querySelector('.notification-event-content p').textContent,`订单 ${hostile} · 配送日期 2026-10-25`);
+  assert.equal(document.querySelector('#notification-center img'),null);
+  assert.equal(window.pwned,undefined);
+  assert.ok(!document.querySelector('#notification-center').textContent.includes('PRIVATE NOTE'));
 });
 
 test('destroy removes focus and refresh timers and rejects late list results',async t=>{

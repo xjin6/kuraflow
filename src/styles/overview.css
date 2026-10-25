@@ -152,9 +152,8 @@
 .business-ranking .empty-state { padding:35px 20px; }
 
 /* The management badge counts the current account’s unread event notifications. */
-.topbar .notification-button { position:relative; display:inline-flex; width:30px; height:30px; flex:none; margin-right:5px; overflow:visible; color:#516979; border:1px solid #d6e0e7; background:rgba(255,255,255,.75); border-radius:6px; }
-.topbar .notification-button .icon svg { width:16px; height:16px; }
-.topbar .notification-button:hover { background:#fff; border-color:#a8bbc9; }
+.topbar .notification-button { position:relative; display:inline-flex; flex:none; overflow:visible; color:#516979; }
+.topbar .notification-button .icon svg { width:20px; height:20px; }
 .notification-badge { position:absolute; top:-9px; right:-9px; display:flex; align-items:center; justify-content:center; min-width:21px; height:21px; padding:0 4px; border:2px solid #f3f6f8; border-radius:12px; background:#c43c4a; color:white; font:650 11px/17px var(--font-ui); letter-spacing:-.03em; box-shadow:0 1px 3px rgba(135,31,44,.2); pointer-events:none; }
 .notification-count-heading { margin:0 0 5px; color:var(--ui-muted); font-size:12px; }
 @media(max-width:1100px) {
@@ -201,7 +200,7 @@
   .business-custom-range > .btn { grid-column:1 / -1; }
   .business-data-note { font-size:11px; }
   .topbar .topbar-right { gap:9px; }
-  .topbar .topbar-right > .notification-button { display:inline-flex; width:30px; height:30px; margin-right:6px; }
+  .topbar .topbar-right > .notification-button { display:inline-flex; }
 }
 @media(prefers-reduced-motion:reduce) { .business-chart-tooltip { transition:none; } }
 .business-compare-period { display:inline-block; margin-left:12px; font-family:var(--font-ui); }
@@ -267,7 +266,7 @@
 /* Keep management page titles on one type scale across all first-level pages. */
 [data-portal-theme="blue"] .page-content .page-heading h1,
 [data-portal-theme="blue"] .page-content .management-heading h1 { font-size:23px; line-height:34px; }
-[data-portal-theme="blue"] .sidebar .nav-list.without-section-label { margin-top:10px; }
+.sidebar .nav-list.without-section-label { margin-top:10px; }
 @media(max-width:720px) {
   [data-portal-theme="blue"] .page-content .page-heading h1,
   [data-portal-theme="blue"] .page-content .management-heading h1 { font-size:21px; line-height:30px; }

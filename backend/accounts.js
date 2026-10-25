@@ -43,6 +43,9 @@ function validStore(org,id) { return JSON.parse(org.core_json).stores?.find(s=>s
 function requirePlatformOwner(actor) {
   if(actor?.role!=='platform'||actor.accountRole!=='owner'||actor.tenantId!=null||actor.storeId!=null||!actor.userId)fail('仅平台负责人可访问。',403);
 }
+function requirePlatform(actor) {
+  if(actor?.role!=='platform'||!['owner','member'].includes(actor.accountRole)||actor.tenantId!=null||actor.storeId!=null||!actor.userId)fail('仅平台可访问。',403);
+}
 function ownerWriteGuard(actor) {
   return {
     sql:`EXISTS(SELECT 1 FROM staff_accounts p WHERE p.id=? AND p.role=? AND p.account_role='owner' AND p.status='active' AND p.version=? AND p.tenant_id IS ? AND p.store_id IS ?
@@ -78,6 +81,10 @@ export async function accountMutationGuard(request,env,actor) {
 async function allowedScope(db,actor,body) {
   if(actor.role==='platform')requirePlatformOwner(actor);
   if(actor.role!=='platform'&&actor.accountRole!=='owner')fail('仅负责人可以管理员账号。',403);
+  if(actor.role==='platform'&&!body.tenantId){
+    if(body.storeId)fail('平台管理员不能归属门店。',400);
+    return {tenantId:null,storeId:null,org:null,role:'platform'};
+  }
   const tenantId=actor.role==='platform'?text(body.tenantId,'中央厨房',160):actor.tenantId;
   const storeId=actor.role==='store'?actor.storeId:(body.storeId?text(body.storeId,'门店',160):null);
   const org=await orgFor(db,tenantId);if(!org)fail('请先开通中央厨房。',409);
@@ -123,7 +130,7 @@ export async function migrateExistingOrganizations(db,env) {
 }
 function settings(body) { const plan=text(body.plan||'标准版','套餐',40),expires=body.expiresOn||null;if(expires&&(!/^\d{4}-\d{2}-\d{2}$/.test(expires)||Number.isNaN(Date.parse(expires))||new Date(expires).toISOString().slice(0,10)!==expires))fail('请选择有效的到期日期。');return {plan,expires}; }
 export async function createKitchen(db,env,actor,body) {
-  if(actor.role!=='platform')fail('仅平台可以开通中央厨房。',403);
+  requirePlatformOwner(actor);
   const name=text(body.name,'中央厨房名称'),ownerName=text(body.ownerName,'负责人姓名'),contact=text(body.contact,'联系方式',120,true),opts=settings(body);
   const tenantId=body.existingTenantId?text(body.existingTenantId,'中央厨房',160):text(body.requestId||crypto.randomUUID(),'请求编号',160);
   const existing=await db.prepare('SELECT id FROM tenants WHERE id=?').bind(tenantId).first();if(body.existingTenantId&&!existing)fail('中央厨房不存在。',404);
@@ -139,9 +146,9 @@ export async function createStaff(db,actor,body) {
   const scope=await allowedScope(db,actor,body),loginId=username(body.username),name=text(body.name||loginId,'姓名'),contact=text(body.contact,'联系方式',120,true);
   const id=text(body.requestId||crypto.randomUUID(),'请求编号',160),prior=await db.prepare('SELECT a.*,(SELECT deleted_at FROM staff_account_archives x WHERE x.account_id=a.id) AS deleted_at FROM staff_accounts a WHERE a.id=?').bind(id).first();
   if(prior){if(prior.tenant_id!==scope.tenantId||prior.store_id!==scope.storeId||prior.login_id!==loginId||prior.account_role!=='member'||prior.deleted_at)fail('请求编号冲突。',409);return {account:publicAccount(prior)};}
-  const hashed=await passwordHash(body.password);
+  const hashed=await passwordHash(body.password),actorGuard=ownerWriteGuard(actor);
   try{await db.batch([
-    db.prepare("INSERT INTO staff_accounts(id,login_id,tenant_id,store_id,role,account_role,name,contact,status,password_hash,created_at) SELECT ?,?,?,?,?,'member',?,?,'active',?,?").bind(id,loginId,scope.tenantId,scope.storeId,scope.role,name,contact,hashed,now()),guard(db),audit(db,actor,'添加管理员',id,scope.tenantId,scope.storeId)
+    db.prepare(`INSERT INTO staff_accounts(id,login_id,tenant_id,store_id,role,account_role,name,contact,status,password_hash,created_at) SELECT ?,?,?,?,?,'member',?,?,'active',?,? WHERE ${actorGuard.sql} AND ${activeStoreGuard}`).bind(id,loginId,scope.tenantId,scope.storeId,scope.role,name,contact,hashed,now(),...actorGuard.params,scope.storeId,scope.tenantId,scope.storeId),guard(db),audit(db,actor,'添加管理员',id,scope.tenantId,scope.storeId)
   ]);}catch(error){if(/login_id|staff_username_normalized/.test(error.message))fail('账号名已被使用，请换一个。',409);if(/CHECK constraint/.test(error.message))fail('账号状态已变更，请刷新后重试。',409);throw error;}
   return {account:publicAccount({id,login_id:loginId,tenant_id:scope.tenantId,store_id:scope.storeId,role:scope.role,account_role:'member',name,contact,status:'active',created_at:now()})};
 }
@@ -149,6 +156,7 @@ async function manageStaff(db,actor,body) {
   const target=await db.prepare('SELECT a.*,(SELECT deleted_at FROM staff_account_archives x WHERE x.account_id=a.id) AS deleted_at FROM staff_accounts a WHERE a.id=?').bind(text(body.accountId||body.id,'账号',160)).first();if(!target)fail('未找到账号。',404);
   const scope=await allowedScope(db,actor,{tenantId:target.tenant_id,storeId:target.store_id});
   if(scope.tenantId!==target.tenant_id||scope.storeId!==target.store_id||target.account_role!=='member')fail('无权修改此账号。',403);
+  if(body.version!==undefined&&body.version!==target.version)fail('账号已变更，请刷新。',409,'ACCOUNT_CHANGED');
   if(target.deleted_at)fail('此管理员已删除，请先恢复。',409,'ACCOUNT_CHANGED');
   const action=body.action;if(!['edit','disable','enable'].includes(action))fail('操作不正确。');
   const loginId=action==='edit'?username(body.username):target.login_id;
@@ -158,7 +166,7 @@ async function manageStaff(db,actor,body) {
   const status=action==='disable'?'disabled':action==='enable'||(action==='edit'&&target.status==='pending'&&hashed)?'active':target.status;
   const actorGuard=ownerWriteGuard(actor);
   try{await db.batch([
-    db.prepare(`UPDATE staff_accounts SET login_id=?,name=?,contact=?,password_hash=?,status=?,version=version+1 WHERE id=? AND version=? AND account_role='member' AND tenant_id=? AND store_id IS ?
+    db.prepare(`UPDATE staff_accounts SET login_id=?,name=?,contact=?,password_hash=?,status=?,version=version+1 WHERE id=? AND version=? AND account_role='member' AND tenant_id IS ? AND store_id IS ?
       AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=staff_accounts.id) AND ${actorGuard.sql} AND ${activeStoreGuard}`).bind(loginId,name,contact,hashed,status,target.id,target.version,scope.tenantId,scope.storeId,...actorGuard.params,scope.storeId,scope.tenantId,scope.storeId),guard(db),db.prepare('DELETE FROM account_sessions WHERE account_id=?').bind(target.id),db.prepare('DELETE FROM account_invites WHERE account_id=?').bind(target.id),audit(db,actor,{edit:'修改管理员',disable:'停用管理员',enable:'启用管理员'}[action],target.id,scope.tenantId,scope.storeId)
   ]);}catch(error){if(/login_id|staff_username_normalized/.test(error.message))fail('账号名已被使用。',409);if(/CHECK constraint/.test(error.message))fail('账号已变更，请刷新。',409);throw error;}
   return {ok:true};
@@ -169,13 +177,13 @@ async function archiveStaff(db,actor,body,restore=false) {
   if(!Number.isSafeInteger(body.version)||body.version<0)fail('请刷新账号信息后重试。',409,'ACCOUNT_CHANGED');
   const target=await db.prepare('SELECT a.*,(SELECT deleted_at FROM staff_account_archives x WHERE x.account_id=a.id) AS deleted_at FROM staff_accounts a WHERE a.id=?').bind(id).first();
   if(!target)fail('未找到账号。',404);
-  if(target.account_role!=='member'||!['admin','store'].includes(target.role)||target.id===actor.userId)fail('只能删除或恢复有权限管理的管理员账号。',403);
+  if(target.account_role!=='member'||!['platform','admin','store'].includes(target.role)||target.id===actor.userId)fail('只能删除或恢复有权限管理的管理员账号。',403);
   const scope=await allowedScope(db,actor,{tenantId:target.tenant_id,storeId:target.store_id});
   if(scope.tenantId!==target.tenant_id||scope.storeId!==target.store_id)fail('无权修改此账号。',403);
   if(target.version!==body.version||Boolean(target.deleted_at)!==restore)fail('账号状态已变更，请刷新后重试。',409,'ACCOUNT_CHANGED');
   const actorGuard=ownerWriteGuard(actor),stamp=now();
   try{await db.batch([
-    db.prepare(`UPDATE staff_accounts SET status='disabled',version=version+1 WHERE id=? AND version=? AND account_role='member' AND role=? AND tenant_id=? AND store_id IS ?
+    db.prepare(`UPDATE staff_accounts SET status='disabled',version=version+1 WHERE id=? AND version=? AND account_role='member' AND role=? AND tenant_id IS ? AND store_id IS ?
       AND ${restore?'':'NOT '}EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=staff_accounts.id)
       AND ${actorGuard.sql} AND ${activeStoreGuard}`).bind(id,body.version,target.role,scope.tenantId,scope.storeId,...actorGuard.params,scope.storeId,scope.tenantId,scope.storeId),
     guard(db),
@@ -189,6 +197,7 @@ async function archiveStaff(db,actor,body,restore=false) {
 }
 async function masterKeyAction(db,env,actor,body) {
   const scope=await allowedScope(db,actor,body);
+  if(scope.role==='platform')fail('平台密钥不提供读取或重置。',403);
   const result=await ensureMaster(db,env,scope.tenantId,scope.storeId);
   if(body.rotate){if(actor.role!=='platform'&&!(actor.role==='admin'&&scope.storeId))fail('请联系上级重置负责人码。',403);
     const row=await db.prepare('SELECT * FROM staff_accounts WHERE id=?').bind(result.account.id).first(),code=generateMasterCode(),cipher=await encryptCode(env,row,code);
@@ -198,6 +207,15 @@ async function masterKeyAction(db,env,actor,body) {
   return result;
 }
 async function listStaff(db,env,actor,params) {
+  if(actor.role==='platform'){
+    requirePlatform(actor);
+    if(!params.get('tenant')){
+      if(params.get('store'))fail('平台管理员不能归属门店。',400);
+      const canManage=actor.accountRole==='owner';
+      const rows=await db.prepare(`SELECT a.*,(SELECT deleted_at FROM staff_account_archives x WHERE x.account_id=a.id) AS deleted_at FROM staff_accounts a WHERE a.role='platform' AND a.tenant_id IS NULL AND a.store_id IS NULL ${canManage?'':'AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=a.id)'} ORDER BY a.account_role DESC,a.created_at,a.id`).all();
+      return {accounts:await withAccountAvatars(db,rows.results.map(publicAccount)),stores:[],organization:null,scope:'platform',storeId:null,canManage,canRotateMaster:false,limit:null};
+    }
+  }
   const tenantId=actor.role==='platform'?params.get('tenant')||'':actor.tenantId,org=await orgFor(db,tenantId);
   if(!org)return {accounts:[],stores:[],needsSetup:true,canManage:false,organization:null,limit:null};
   const storeId=actor.role==='store'?actor.storeId:params.get('store')||null;if(storeId&&!validStore(org,storeId))fail('门店不存在。',404);
@@ -232,7 +250,7 @@ function inlineStoreImage(value) {
   const bytes=Buffer.from(match[2],'base64');return supportedImage(match[1],bytes)?{mime:match[1],bytes}:null;
 }
 async function platformCustomer(db,actor,params) {
-  requirePlatformOwner(actor);
+  requirePlatform(actor);
   const tenantId=text(params.get('tenant'),'中央厨房',160),org=await orgFor(db,tenantId);
   if(!org)fail('中央厨房不存在。',404);
   const stored=JSON.parse(org.core_json).stores||[];
@@ -256,7 +274,7 @@ async function platformCustomer(db,actor,params) {
   return {customer:{id:tenantId,name:org.name,active:org.active===1,plan:org.plan,expiresOn:org.expires_on,ownerName:owner?.name||'',contact:owner?.contact||'',...await organizationAvatar(db,tenantId)},stores,managementAccounts};
 }
 async function platformStoreImage(env,actor,params) {
-  requirePlatformOwner(actor);
+  requirePlatform(actor);
   const tenantId=text(params.get('tenant'),'中央厨房',160),storeId=text(params.get('store'),'门店',160),org=await orgFor(env.DB,tenantId);
   const store=org&&JSON.parse(org.core_json).stores?.find(item=>item.id===storeId);
   if(!store)fail('门店不存在。',404);
@@ -299,11 +317,11 @@ async function platformResetPassword(db,actor,body) {
   return {ok:true,account:(await withAccountAvatars(db,[customerAccount({...target,version:body.version+1,has_password:1})]))[0]};
 }
 async function platformList(db,actor) {
-  if(actor.role!=='platform')fail('仅平台可访问。',403);
+  requirePlatform(actor);
   const rows=await db.prepare("SELECT t.id,t.name,o.plan,o.active,o.expires_on,NULL AS admin_limit,o.store_limit,a.name AS owner_name,a.contact,a.status AS owner_status,k.account_id AS has_master,(SELECT COUNT(*) FROM staff_accounts x WHERE x.tenant_id=t.id AND x.role='admin' AND x.account_role='member' AND x.status!='disabled') AS seats FROM tenants t LEFT JOIN organizations o ON o.tenant_id=t.id LEFT JOIN staff_accounts a ON a.tenant_id=t.id AND a.role='admin' AND a.account_role='owner' LEFT JOIN account_keys k ON k.account_id=a.id ORDER BY t.created_at DESC").all();return {kitchens:await withOrganizationAvatars(db,rows.results)};
 }
 async function editKitchen(db,actor,body) {
-  if(actor.role!=='platform')fail('仅平台可访问。',403);const id=text(body.tenantId||body.id,'中央厨房',160),org=await orgFor(db,id);if(!org)fail('中央厨房尚未开通。',404);const opts=settings(body),active=body.active===false?0:1;
+  requirePlatformOwner(actor);const id=text(body.tenantId||body.id,'中央厨房',160),org=await orgFor(db,id);if(!org)fail('中央厨房尚未开通。',404);const opts=settings(body),active=body.active===false?0:1;
   const details=body.ownerName?[db.prepare("UPDATE staff_accounts SET name=?,contact=? WHERE tenant_id=? AND role='admin' AND account_role='owner'").bind(text(body.ownerName,'负责人姓名'),text(body.contact,'联系方式',120,true),id)]:[];
   await db.batch([db.prepare('UPDATE organizations SET plan=?,active=?,expires_on=?,admin_limit=3,store_limit=3 WHERE tenant_id=?').bind(opts.plan,active,opts.expires,id),...details,...(active?[]:[db.prepare('DELETE FROM account_sessions WHERE account_id IN (SELECT id FROM staff_accounts WHERE tenant_id=?)').bind(id)]),audit(db,actor,active?'更新客户配置':'停用中央厨房',id,id)]);return {ok:true};
 }
@@ -328,15 +346,15 @@ async function authEndpoint(request,env,path,config) {
     const org=await orgFor(db,row.tenant_id);if(!orgAvailable(org)||(role==='store'&&!validStore(org,row.store_id)))fail('所属中央厨房或门店已停用。',403);return issueSession(db,row,config);
   }
   if(path==='/api/accounts/login') {
-    const loginId=username(body.username||body.loginId),role=body.portal==='kitchen'?'admin':body.portal==='store'?'store':null;if(!role||typeof body.password!=='string'||body.password.length>128)fail('账号名或密码不正确。',401);
+    const loginId=username(body.username||body.loginId),role=body.portal==='kitchen'?'admin':body.portal==='store'?'store':body.portal==='platform'?'platform':null;if(!role||typeof body.password!=='string'||body.password.length>128)fail('账号名或密码不正确。',401);
     const bucket=await accountRate(db,role+':'+loginId),row=await db.prepare("SELECT * FROM staff_accounts WHERE login_id=? AND role=? AND account_role='member' AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=staff_accounts.id)").bind(loginId,role).first();const matches=await passwordMatches(body.password,row?.password_hash);if(!matches||row?.status!=='active')fail('账号名或密码不正确，或账号已停用。',401);
-    const org=await orgFor(db,row.tenant_id);if(!orgAvailable(org)||(role==='store'&&!validStore(org,row.store_id)))fail('所属中央厨房或门店已停用。',403);await db.prepare('DELETE FROM auth_rate_limits WHERE bucket=?').bind(bucket).run();return issueSession(db,row,config);
+    if(role!=='platform'){const org=await orgFor(db,row.tenant_id);if(!orgAvailable(org)||(role==='store'&&!validStore(org,row.store_id)))fail('所属中央厨房或门店已停用。',403);}else if(row.tenant_id!==null||row.store_id!==null)fail('账号所属平台不正确。',403);await db.prepare('DELETE FROM auth_rate_limits WHERE bucket=?').bind(bucket).run();return issueSession(db,row,config);
   }
   if(path==='/api/accounts/profile') {
     const actor=await getIdentity(request,env);if(!actor||actor.accountRole!=='member')fail('请以管理员账号登录。',403);const row=await db.prepare('SELECT * FROM staff_accounts WHERE id=?').bind(actor.userId).first();
     if(typeof body.oldPassword!=='string'||body.oldPassword.length>128||!await passwordMatches(body.oldPassword,row.password_hash))fail('当前密码不正确。');
-    const nextName=username(body.username),hashed=body.password?await passwordHash(body.password):row.password_hash;
-    try{await db.batch([db.prepare("UPDATE staff_accounts SET login_id=?,password_hash=?,version=version+1 WHERE id=? AND version=? AND status='active' AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=staff_accounts.id)").bind(nextName,hashed,row.id,row.version),guard(db),db.prepare('DELETE FROM account_sessions WHERE account_id=?').bind(row.id),audit(db,actor,'修改自己的登录信息',row.id)]);}catch(error){if(/login_id|staff_username_normalized/.test(error.message))fail('账号名已被使用。',409);if(/CHECK constraint/.test(error.message))fail('账号状态已变更，请重新登录。',409,'ACCOUNT_CHANGED');throw error;}
+    const nextName=username(body.username),hashed=body.password?await passwordHash(body.password):row.password_hash,name=body.name===undefined?row.name:text(body.name,'姓名'),contact=body.contact===undefined?row.contact:text(body.contact,'联系方式',120,true);
+    try{await db.batch([db.prepare("UPDATE staff_accounts SET login_id=?,password_hash=?,name=?,contact=?,version=version+1 WHERE id=? AND version=? AND status='active' AND NOT EXISTS(SELECT 1 FROM staff_account_archives x WHERE x.account_id=staff_accounts.id)").bind(nextName,hashed,name,contact,row.id,row.version),guard(db),db.prepare('DELETE FROM account_sessions WHERE account_id=?').bind(row.id),audit(db,actor,'修改自己的登录信息',row.id)]);}catch(error){if(/login_id|staff_username_normalized/.test(error.message))fail('账号名已被使用。',409);if(/CHECK constraint/.test(error.message))fail('账号状态已变更，请重新登录。',409,'ACCOUNT_CHANGED');throw error;}
     return json({ok:true},200,{'Set-Cookie':cookie(config,'',0)});
   }
   fail('接口不存在。',404);
@@ -352,7 +370,7 @@ export async function handleAccounts(request,env) {
       if(path==='/api/platform/store-image')return await platformStoreImage(env,actor,url.searchParams);
       if(path==='/api/platform/kitchens')return json(await platformList(env.DB,actor));
       if(path==='/api/team/list')return json(await listStaff(env.DB,env,actor,url.searchParams));
-      if(path==='/api/team/audit'){if(actor.role!=='platform'&&actor.accountRole!=='owner')fail('仅负责人可查看。',403);const tenantId=actor.role==='platform'?url.searchParams.get('tenant')||null:actor.tenantId;const result=await env.DB.prepare(`SELECT actor_name,action,target_id,created_at FROM account_audit WHERE (? IS NULL OR tenant_id=?) ${actor.role==='store'?'AND store_id=?':''} ORDER BY created_at DESC LIMIT 100`).bind(tenantId,tenantId,...(actor.role==='store'?[actor.storeId]:[])).all();return json({events:result.results});}
+      if(path==='/api/team/audit'){if(actor.accountRole!=='owner')fail('仅负责人可查看。',403);const tenantId=actor.role==='platform'?url.searchParams.get('tenant')||null:actor.tenantId;const result=await env.DB.prepare(`SELECT actor_name,action,target_id,created_at FROM account_audit WHERE (? IS NULL OR tenant_id=?) ${actor.role==='store'?'AND store_id=?':''} ORDER BY created_at DESC LIMIT 100`).bind(tenantId,tenantId,...(actor.role==='store'?[actor.storeId]:[])).all();return json({events:result.results});}
     }
     if(request.method!=='POST')fail('请求方式不正确。',405);const body=await readMutation(request,config.origin);
     if(path==='/api/platform/create')return json(await createKitchen(env.DB,env,actor,body),201);
@@ -363,7 +381,7 @@ export async function handleAccounts(request,env) {
     if(path==='/api/team/delete')return json(await archiveStaff(env.DB,actor,body));
     if(path==='/api/team/restore')return json(await archiveStaff(env.DB,actor,body,true));
     if(path==='/api/team/master-key')return json(await masterKeyAction(env.DB,env,actor,body));
-    if(path==='/api/platform/upgrade-existing'){if(actor.role!=='platform')fail('无权访问。',403);return json(await migrateExistingOrganizations(env.DB,env));}
+    if(path==='/api/platform/upgrade-existing'){requirePlatformOwner(actor);return json(await migrateExistingOrganizations(env.DB,env));}
     fail('接口不存在。',404);
   }catch(error){const status=error.status||500;if(status>=500)console.error(JSON.stringify({event:'account_error',path,code:error.code||'internal'}));return json({error:status<500?error.message:'账号服务暂时不可用，请稍后重试。',code:error.code},status);}
 }

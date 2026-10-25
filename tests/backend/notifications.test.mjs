@@ -101,7 +101,8 @@ test('tenant scope and role reject foreign reads/marks without partial mutation'
   assert.deepEqual((await listNotifications(db, a.admin, query({ tenantId: b.admin.tenantId, userId: b.admin.userId }))).items.map(item => item.id), [own.id]);
   await assert.rejects(markNotificationsRead(db, a.admin, { ids: [own.id, foreign.id] }), { status: 404 });
   assert.equal((await listNotifications(db, a.admin)).unreadCount, 1);
-  for (const principal of [a.store, { ...a.admin, role: 'platform' }]) {
+  assert.deepEqual((await listNotifications(db, a.store, query({ tenantId: b.admin.tenantId, storeId: 'store-b' }))).items.map(item => item.id), [own.id]);
+  for (const principal of [{ ...a.store, storeId: '' }, { ...a.admin, role: 'platform' }]) {
     await assert.rejects(listNotifications(db, principal), { status: 403 });
     await assert.rejects(markNotificationsRead(db, principal, { through: own.id }), { status: 403 });
   }
@@ -254,10 +255,10 @@ test('HTTP routes enforce active per-account identities, role, origin, body size
   assert.equal(listed.headers.get('Cache-Control'), 'no-store');
   const event = (await listed.json()).items[0];
   assert.equal((await api('', '/api/notifications')).status, 401);
-  for (const token of [storeToken, platformToken]) {
-    assert.equal((await api(token, '/api/notifications')).status, 403);
-    assert.equal((await api(token, '/api/notifications/read', { body: { ids: [event.id] } })).status, 403);
-  }
+  assert.equal((await api(storeToken, '/api/notifications')).status, 200);
+  assert.equal((await api(storeToken, '/api/notifications/read', { body: { ids: [event.id] } })).status, 200);
+  assert.equal((await api(platformToken, '/api/notifications')).status, 200);
+  assert.equal((await api(platformToken, '/api/notifications/read', { body: { ids: [999999999] } })).status, 404);
   assert.equal((await api(adminToken, '/api/notifications/read', { body: { ids: [event.id] }, headers: { Origin: 'https://attacker.test' } })).status, 403);
   assert.equal((await api(adminToken, '/api/notifications/read', { body: '{}', headers: { 'Content-Type': 'text/plain' } })).status, 415);
   assert.equal((await api(adminToken, '/api/notifications/read', { body: '{' })).status, 400);
@@ -269,4 +270,91 @@ test('HTTP routes enforce active per-account identities, role, origin, body size
   assert.equal((await api(adminToken, '/api/notifications/read', { body: { through: event.id } })).status, 401);
   await db.prepare('UPDATE organizations SET active = 0 WHERE tenant_id = ?').bind(context.admin.tenantId).run();
   assert.equal((await api(memberToken, '/api/notifications')).status, 401);
+});
+
+test('store center exposes only its own safe order milestones and preserves per-account reads', async () => {
+  const context = await setup('notify-store-scope');
+  const { result: ownOrder } = await submit(context);
+  const { result: otherOrder } = await executeCommand(db, context.admin, cmd('submitOrder', ['store-b', { [context.product.id]: 1 }, tokyoToday(), '']));
+  await executeCommand(db, context.admin, cmd('setPackingNote', [ownOrder.id, context.product.id, '采购价 999，不向客户公开', 'shortage']));
+  await executeCommand(db, context.admin, cmd('setWarehouseStock', [context.product.id, 4]));
+  await db.prepare("UPDATE notification_events SET title='INTERNAL TITLE SECRET',body='INTERNAL BODY SECRET',actor_name='PRIVATE STAFF' WHERE tenant_id=? AND kind='order_submitted'").bind(context.admin.tenantId).run();
+  const before = await loadState(db, context.admin.tenantId);
+  const page = await listNotifications(db, context.store, query({ tenantId: 'forged', storeId: 'store-b', userId: context.admin.userId }));
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].targetId, ownOrder.id);
+  assert.equal(page.items[0].titleKey, '订单已提交');
+  assert.deepEqual(page.items[0].bodyParams, [ownOrder.id, ownOrder.deliveryDate]);
+  for (const secret of ['INTERNAL', 'PRIVATE STAFF', '采购价', otherOrder.id, 'stock_low', 'packing_shortage']) assert.ok(!JSON.stringify(page).includes(secret));
+  const otherItem = (await listNotifications(db, context.admin)).items.find(item => item.targetId === otherOrder.id);
+  await assert.rejects(markNotificationsRead(db, context.store, { ids: [page.items[0].id, otherItem.id] }), { status: 404 });
+  assert.equal((await listNotifications(db, context.store)).unreadCount, 1);
+  await markNotificationsRead(db, context.store, { ids: [page.items[0].id] });
+  assert.equal((await listNotifications(db, context.store)).unreadCount, 0);
+  assert.equal((await listNotifications(db, { ...context.store, userId: 'another-store-user' })).unreadCount, 1);
+  assert.equal((await listNotifications(db, context.admin)).unreadCount, 4);
+  assert.deepEqual(await loadState(db, context.admin.tenantId), before);
+});
+
+test('store milestones keep current order state without leaking historical notes', async () => {
+  const context = await setup('notify-store-stages');
+  const { result: order } = await submit(context);
+  await executeCommand(db, context.admin, cmd('setPackLineDone', [order.id, context.product.id, true]));
+  for (const stage of ['ready', 'delivering', 'delivered']) await executeCommand(db, context.admin, cmd('setStage', [order.id, stage]));
+  const page = await listNotifications(db, context.store);
+  assert.deepEqual(page.items.map(item => item.kind), ['order_delivered', 'order_delivering', 'order_ready', 'order_submitted']);
+  assert.ok(page.items.every(item => item.currentStatus.label === '已送达'));
+  await markNotificationsRead(db, context.store, { through: page.latestId });
+  assert.equal((await listNotifications(db, context.store)).unreadCount, 0);
+  assert.equal((await listNotifications(db, context.admin)).unreadCount, 4);
+});
+
+test('disabled notification policies independently reject management/store lists and writes', async () => {
+  const context = await setup('notify-policy'); await submit(context);
+  const item = (await listNotifications(db, context.store)).items[0];
+  await db.prepare('INSERT INTO tenant_portal_features(tenant_id,admin_multilingual_enabled,admin_notifications_enabled,store_flow_enabled,store_multilingual_enabled,store_notifications_enabled,updated_at) VALUES(?,0,1,0,0,0,?)')
+    .bind(context.admin.tenantId, new Date().toISOString()).run();
+  await assert.rejects(listNotifications(db, context.store), { status: 403, code: 'NOTIFICATIONS_DISABLED' });
+  await assert.rejects(markNotificationsRead(db, context.store, { ids: [item.id] }), { status: 403, code: 'NOTIFICATIONS_DISABLED' });
+  assert.equal((await listNotifications(db, context.admin)).unreadCount, 1);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM notification_reads WHERE tenant_id=?').bind(context.admin.tenantId).first()).n, 0);
+  await db.prepare('UPDATE tenant_portal_features SET admin_notifications_enabled=0,store_notifications_enabled=1 WHERE tenant_id=?').bind(context.admin.tenantId).run();
+  await assert.rejects(listNotifications(db, context.admin), { status: 403, code: 'NOTIFICATIONS_DISABLED' });
+  await assert.rejects(markNotificationsRead(db, context.admin, { through: item.id }), { status: 403, code: 'NOTIFICATIONS_DISABLED' });
+  assert.equal((await listNotifications(db, context.store)).unreadCount, 1);
+});
+
+async function accountEvent({ tenantId = null, storeId = null, action = '添加管理员', targetId = 'SECRET-TARGET', actorName = '平台人员' } = {}) {
+  const id = crypto.randomUUID();
+  await db.prepare('INSERT INTO account_audit(id,tenant_id,store_id,actor_id,actor_name,action,target_id,created_at) VALUES(?,?,?,?,?,?,?,?)')
+    .bind(id, tenantId, storeId, 'platform-owner', actorName, action, targetId, Math.floor(Date.now() / 1000)).run();
+  return (await db.prepare('SELECT id FROM platform_notification_events WHERE audit_id=?').bind(id).first()).id;
+}
+
+test('platform notifications use safe persisted account summaries and independent read markers', async () => {
+  const context = await setup('notify-platform');
+  const platform = { role: 'platform', accountRole: 'owner', userId: 'platform-notify-owner' };
+  const colleague = { ...platform, accountRole: 'member', userId: 'platform-notify-member' };
+  const start = (await listNotifications(db, platform)).latestId;
+  const customerId = await accountEvent({ tenantId: context.admin.tenantId, action: '更新客户配置' });
+  const staffId = await accountEvent();
+  const hiddenId = await accountEvent({ action: 'raw secret = PASSWORD TOKEN PRIVATE CHAT' });
+  await accountEvent({ tenantId: 'tenant-does-not-exist', action: '开通中央厨房' });
+  const before = await loadState(db, context.admin.tenantId);
+  const page = await listNotifications(db, platform, query({ tenantId: context.admin.tenantId, storeId: 'store-a' }));
+  const newItems = page.items.filter(item => item.id > start);
+  assert.deepEqual(newItems.map(item => item.id), [staffId, customerId]);
+  assert.equal(newItems[0].targetType, 'team'); assert.equal(newItems[0].targetId, 'platform');
+  assert.equal(newItems[1].targetType, 'customer'); assert.equal(newItems[1].tenantId, context.admin.tenantId);
+  for (const secret of ['SECRET-TARGET', 'PASSWORD', 'TOKEN', 'PRIVATE CHAT', 'tenant-does-not-exist']) assert.ok(!JSON.stringify(page).includes(secret));
+  await assert.rejects(markNotificationsRead(db, platform, { ids: [staffId, hiddenId] }), { status: 404 });
+  assert.equal((await listNotifications(db, platform)).items.find(item => item.id === staffId).read, false);
+  await markNotificationsRead(db, platform, { ids: [staffId] });
+  assert.equal((await listNotifications(db, platform)).items.find(item => item.id === staffId).read, true);
+  assert.equal((await listNotifications(db, colleague)).items.find(item => item.id === staffId).read, false);
+  assert.deepEqual(await loadState(db, context.admin.tenantId), before);
+  await markNotificationsRead(db, platform, { through: page.latestId });
+  const newest = await accountEvent({ tenantId: context.admin.tenantId });
+  const unread = await listNotifications(db, platform, query({ filter: 'unread' }));
+  assert.deepEqual(unread.items.map(item => item.id), [newest]);
 });

@@ -19,12 +19,12 @@ async function fixture(t,route=()=>{throw Error('Unexpected route');}){
   const dom=new JSDOM('<div id="app"></div><div id="overlay-root"></div><div id="toast-container"></div>',{url:'https://accounts.example.test/?login=platform',runScripts:'outside-only',virtualConsole:console});
   t.after(()=>{dom.window.close();assert.deepEqual(errors,[]);});const {window}=dom;
   window.__KURAFLOW_ACCOUNT_PRINCIPAL__={role:'platform',accountRole:'owner',tenantId:null,storeId:null,displayName:'测试平台'};
-  window.fetch=async(path,options={})=>{const call={path:String(path),method:options.method||'GET',body:options.body===undefined?undefined:JSON.parse(options.body),options};calls.push(call);if(call.path==='/api/platform/kitchens')return response({kitchens:clone(kitchens)});return route(call);};
+  window.fetch=async(path,options={})=>{if(String(path)==='/api/flow/status')return response({enabled:false,available:false});if(String(path).startsWith('/api/notifications?'))return response({items:[],unreadCount:0,latestId:0,hasMore:false});const call={path:String(path),method:options.method||'GET',body:options.body===undefined?undefined:JSON.parse(options.body),options};calls.push(call);if(call.path==='/api/platform/kitchens')return response({kitchens:clone(kitchens)});return route(call);};
   await window.eval(`(async()=>{${bundle}\n})()`);await until(()=>window.document.querySelector('[data-action="accounts-kitchen-customer"]'));
   return {window,document:window.document,calls};
 }
 function click(document,selector){const el=document.querySelector(selector);assert.ok(el,selector);el.click();return el;}
-async function open(document,id='tenant-a'){click(document,`[data-action="accounts-kitchen-customer"][data-tenant="${id}"]`);await until(()=>document.querySelector('.customer-heading'));}
+async function open(document,id='tenant-a'){click(document,`[data-action="accounts-kitchen-customer"][data-tenant="${id}"]`);await until(()=>document.querySelector('.customer-heading'));assert.equal(document.querySelector('[data-tab="admins"]').getAttribute('aria-selected'),'true');assert.equal(document.querySelector('[data-tab="admins"]').textContent,'员工管理');assert.match(document.querySelector('[data-tab="stores"]').textContent,/合作门店/);click(document,'[data-tab="stores"]');}
 function change(window,input,value){input.checked=value;input.dispatchEvent(new window.Event('change',{bubbles:true}));}
 function submit(window,form){const event=new window.Event('submit',{bubbles:true,cancelable:true});form.dispatchEvent(event);assert.equal(event.defaultPrevented,true);}
 function resetForm(document,accountId='store-member'){click(document,`[data-action="accounts-customer-password"][data-id="${accountId}"]`);const form=document.getElementById('accounts-customer-password-form');assert.ok(form);return form;}

@@ -6,7 +6,8 @@ import {buildFlowSystemPrompt} from './flow-prompt.js';
 import {createFlowStore} from './flow-store.js';
 import {createFlowProvider} from './flow-provider.js';
 import {flowVisualTool} from './flow-content.js';
-import {getFlowPolicy} from './flow-control.js';
+import {getPrincipalFlowPolicy} from './portal-features.js';
+import {assertFlowScope,flowStorageScope} from './flow-scope.js';
 import {createFlowActions,FLOW_WRITE_TOOLS,FLOW_ADDRESS_TOOL,FLOW_REQUEST_ID,isFlowWriteTool,findFlowAddresses} from './flow-actions.js';
 
 const CHAT_BUDGET_MS = 180000;
@@ -25,8 +26,8 @@ const safeModel = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9.
 const toolLabel = name => FLOW_WRITE_TOOLS.find(tool=>tool.name===name)?.label || ({flow_find_address:'核对门店地址',flow_catalogue_summary:'统计商品类别',flow_render_visual:'绘制图片',flow_search:'搜索站内数据',flow_get_record:'读取业务详情',flow_business_summary:'汇总经营数据',flow_catalogue_audit:'核对库存和报价'}[name] || '查询业务数据');
 
 function assertPrincipal(principal) {
-  if (!principal) fail('请先登录管理端。',401);
-  if (principal.role !== 'admin' || principal.storeId || !principal.tenantId || !principal.userId) fail('Flow 仅供管理端使用。',403);
+  if (!principal) fail('请先登录。',401);
+  assertFlowScope(principal);
 }
 function assertEnabled(policy) {
   if (!policy.enabled) fail('Flow 未开通或已停用，请联系平台。',403);
@@ -96,9 +97,10 @@ function managementStatus(policy,connection={}) {
 }
 
 /** All Flow request state belongs to this request; durable locks and data live in D1. */
-export async function handleFlow(request, env, ctx, {identity=getIdentity,store,provider,loadData=createFlowDataContext,getPolicy=getFlowPolicy} = {}) {
+export async function handleFlow(request, env, ctx, {identity=getIdentity,store,provider,loadData=createFlowDataContext,getPolicy:legacyPolicy} = {}) {
   const url=new URL(request.url);
   if(!url.pathname.startsWith('/api/flow/'))return null;
+  const getPolicy=(env,principal)=>legacyPolicy?legacyPolicy(env,principal.tenantId):getPrincipalFlowPolicy(env,principal);
   let pendingLease;
   try {
     const principal=await identity(request,env);assertPrincipal(principal);
@@ -106,7 +108,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     store ||= createFlowStore(env);
     provider ||= createFlowProvider({store});
     if(url.pathname==='/api/flow/provider'||url.pathname.startsWith('/api/flow/auth/'))fail('Flow 由平台统一配置。',403);
-    const policy=await getPolicy(env,principal.tenantId);
+    const policy=await getPolicy(env,principal);
     if(request.method==='GET'&&url.pathname==='/api/flow/status') {
       if(!policy.enabled)return json(managementStatus(policy));
       const connection=await provider.status(principal);
@@ -117,7 +119,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     const attachmentRoute=/^\/api\/flow\/attachments\/([a-f0-9-]{36})(?:\/parts\/(\d+))?$/.exec(url.pathname);
     if(request.method==='POST'&&url.pathname==='/api/flow/attachments') {
       const body=await readBody(request,1600000),attachment=await attachmentStore.put(principal,body);
-      assertEnabled(await getPolicy(env,principal.tenantId));return json({attachment});
+      assertEnabled(await getPolicy(env,principal));return json({attachment});
     }
     if(request.method==='GET'&&attachmentRoute){
       const record=await attachmentStore.get(principal,attachmentRoute[1]);
@@ -126,6 +128,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     }
     const actionRoute=/^\/api\/flow\/actions\/([a-f0-9-]{36})(?:\/(confirm|cancel))?$/.exec(url.pathname);
     if(actionRoute) {
+      if(principal.role!=='admin')fail('当前账号的 Flow 仅支持查询。',403);
       if(!FLOW_REQUEST_ID.test(actionRoute[1])||(actionRoute[2]?request.method!=='POST':request.method!=='GET'))fail('接口不存在。',404);
       const scope=JSON.stringify(['flow-chat',principal.tenantId,principal.userId]),owner=crypto.randomUUID();
       if(!await store.acquireLease(scope,owner,CHAT_BUDGET_MS))fail('Flow 正在处理，请稍后再确认。',409);
@@ -139,10 +142,10 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
       const checkAccess=async()=>{
         const current=await identity(request,env);
         if(!current||current.role!=='admin'||current.storeId||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.version!==principal.version||current.accountRole!==principal.accountRole)fail('登录状态已变更，请重新登录。',401);
-        assertEnabled(await getPolicy(env,principal.tenantId));
+        assertEnabled(await getPolicy(env,principal));
       };
       const businessDB=env.DB.withSession?env.DB.withSession('first-primary'):env.DB;
-      const actions=createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data:await loadData(businessDB,principal),checkAccess,readPolicy:()=>getPolicy(env,principal.tenantId)});
+      const actions=createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data:await loadData(businessDB,principal),checkAccess,readPolicy:()=>getPolicy(env,principal)});
       const result=actionRoute[2]?await actions.resolve(actionRoute[1],actionRoute[2]):{proposals:await actions.proposals(),mutations:await actions.receipts()};
       await store.releaseLease(scope,owner);pendingLease=null;return json(result);
     }
@@ -163,7 +166,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     const explicit=cleanAttachmentRefs(body.attachments||[]),refs=explicit.length?explicit:history.findLast(row=>row.role==='user'&&row.attachments?.length)?.attachments||[];
     const attachmentRecords=await Promise.all(refs.map(ref=>attachmentStore.get(principal,ref.id)));
     const attachments=attachmentContext(attachmentRecords);
-    const startedAt=Date.now(),scope=JSON.stringify(['flow-chat',principal.tenantId,principal.userId]),owner=crypto.randomUUID();
+    const startedAt=Date.now(),scope=JSON.stringify(['flow-chat',...flowStorageScope(principal)]),owner=crypto.randomUUID();
     if(!await store.acquireLease(scope,owner,CHAT_BUDGET_MS))fail('Flow 正在处理上一条问题，请稍等或先停止。',409);
     pendingLease={scope,owner};
     const connection=await provider.status(principal);
@@ -171,7 +174,7 @@ export async function handleFlow(request, env, ctx, {identity=getIdentity,store,
     const model=policy.model||connection.model;
     if(body.model!=null&&body.model!==model)fail('Flow 模型由平台统一设置。',403);
     if(!safeModel(model)||!connection.models?.some(row=>row.id===model))fail('Flow 模型暂时不可用，请联系平台。',409);
-    const latestPolicy=await getPolicy(env,principal.tenantId);assertEnabled(latestPolicy);
+    const latestPolicy=await getPolicy(env,principal);assertEnabled(latestPolicy);
     if(latestPolicy.model&&latestPolicy.model!==model)fail('Flow 配置已更新，请重试。',409);
     request.signal.throwIfAborted();
     const remainingBudget=CHAT_BUDGET_MS-(Date.now()-startedAt);
@@ -204,8 +207,8 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
     if(!force&&Date.now()-lastPolicyCheck<750)return;
     policyChecking||=(async()=>{
       const current=await identity(request,env);
-      if(!current||current.role!=='admin'||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.storeId||current.accountRole!==principal.accountRole||current.version!==principal.version)fail('登录状态已变更，请重新登录。',401);
-      const policy=await getPolicy(env,principal.tenantId);assertEnabled(policy);
+      if(!current||current.role!==principal.role||current.tenantId!==principal.tenantId||current.userId!==principal.userId||current.storeId!==principal.storeId||current.accountRole!==principal.accountRole||current.version!==principal.version)fail('登录状态已变更，请重新登录。',401);
+      const policy=await getPolicy(env,principal);assertEnabled(policy);
       if(policy.model&&policy.model!==model)fail('Flow 配置已更新，请重新提问。',409);
       lastPolicyCheck=Date.now();
     })();
@@ -248,11 +251,11 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
           const businessDB=env.DB.withSession?env.DB.withSession('first-primary'):env.DB;
           const data=await abortable(loadData(businessDB,principal),signal),sources=new Map(),images=new Map();let toolsUsed=0;
           const mutations=new Map(),proposals=new Map();
-          const actions=requestId?createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data,attachmentRecords,readPolicy:()=>getPolicy(env,principal.tenantId),checkAccess:()=>checkAccess(true),onMutation:mutation=>{mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});},onProposal:proposal=>{proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}}):null;
+          const actions=requestId&&principal.role==='admin'?createFlowActions({request,env:{...env,DB:businessDB},principal,requestId,data,attachmentRecords,readPolicy:()=>getPolicy(env,principal),checkAccess:()=>checkAccess(true),onMutation:mutation=>{mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});},onProposal:proposal=>{proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}}):null;
           const completedActions=actions?await actions.receipts():[];
           for(const mutation of completedActions){mutations.set(mutation.id,mutation);emit({type:'mutation',mutation});}
           for(const proposal of actions?await actions.proposals():[]){proposals.set(proposal.id,proposal);emit({type:'proposal',proposal});}
-          await checkAccess(true);progress('prepare','准备业务数据','done','已确认当前厨房的数据范围');progress('model','理解问题');
+          await checkAccess(true);progress('prepare','准备业务数据','done','已确认当前账号的数据范围');progress('model','理解问题');
           const executeTool=async(name,args)=>{
             signal.throwIfAborted();
             if(++toolsUsed>12)fail('本轮查询次数已达上限，请缩小问题范围。');
@@ -266,9 +269,9 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
               if(name===flowVisualTool.name) {
                 const image=await store.createArtifact(principal,args);await checkAccess(true);
                 images.set(image.id,image);emit({type:'image',image});result={image,images:[image]};
-              } else if(name===FLOW_ADDRESS_TOOL.name)result=findFlowAddresses(args);
+              } else if(name===FLOW_ADDRESS_TOOL.name&&principal.role==='admin')result=findFlowAddresses(args);
               else if(isFlowWriteTool(name)) {
-                if(!actions)fail('请刷新页面后重新发送操作。');
+                if(!actions)fail('当前账号的 Flow 仅支持查询。',403);
                 result=await actions.execute(name,args);
               } else result=await runFlowTool(data,name,args);
             } catch(error) {progress(stepId,label,'error','这一步未完成');emit({type:'tool',name,label,status:'error'});throw error;}
@@ -283,7 +286,7 @@ function chatResponse({request,env,ctx,principal,identity,store,provider,loadDat
           // Serialize model tools so a subsequent query sees earlier writes,
           // including SDKs that request multiple tool calls concurrently.
           const execute=(name,args)=>{const pending=toolQueue.then(()=>executeTool(name,args));toolQueue=pending.catch(()=>{});return pending;};
-          await abortable(provider.chat({principal,message,history:history.map(({role,content})=>({role,content})),attachments,model,systemPrompt:buildFlowSystemPrompt({index:data.index,context,writesEnabled:!!actions,completedActions,preparedActions:[...proposals.values()],attachmentNames:attachmentRecords.map(r=>({id:r.id,name:r.name,locations:r.parts.map(p=>p.label)}))}),toolDefinitions:[...flowToolDefinitions,FLOW_ADDRESS_TOOL,...(actions?FLOW_WRITE_TOOLS.filter(tool=>tool.name!=='flow_import_attachment_rows'||attachmentRecords.length):[]),flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
+          await abortable(provider.chat({principal,message,history:history.map(({role,content})=>({role,content})),attachments,model,systemPrompt:buildFlowSystemPrompt({portal:principal.role,index:data.index,context,writesEnabled:!!actions,completedActions,preparedActions:[...proposals.values()],attachmentNames:attachmentRecords.map(r=>({id:r.id,name:r.name,locations:r.parts.map(p=>p.label)}))}),toolDefinitions:[...(data.definitions||flowToolDefinitions),...(principal.role==='admin'?[FLOW_ADDRESS_TOOL]:[]),...(actions?FLOW_WRITE_TOOLS.filter(tool=>tool.name!=='flow_import_attachment_rows'||attachmentRecords.length):[]),flowVisualTool],runTool:execute,onEvent:responseEvent,signal}),signal);
           await toolQueue;await eventQueue;await checkAccess(true);emit({type:'sources',sources:[...sources.values()].slice(0,20)});finishSteps('done');emit({type:'done',model,images:[...images.values()],mutations:[...mutations.values()],proposals:[...proposals.values()],steps:[...steps.values()]});
         } catch(error) {
           if(!signal.aborted){finishSteps('error');emit({type:'error',message:cleanError(error)});}

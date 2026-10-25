@@ -19,6 +19,12 @@
 .account-code, .account-id-cell code { font-family:var(--font-data); font-size:12px; }
 .account-id-cell { display:flex; align-items:center; gap:7px; }
 .account-id-cell .icon-button { width:26px; height:26px; }
+.portal-feature-matrix { margin-bottom:18px; }
+.portal-feature-matrix-heading,.portal-feature-matrix-row { display:grid; grid-template-columns:minmax(0,1fr) 76px 76px; align-items:center; gap:10px; }
+.portal-feature-matrix-heading { min-height:34px; color:var(--ui-muted); font-size:12px; }
+.portal-feature-matrix-heading strong { text-align:center; font-weight:500; }
+.portal-feature-matrix-row { min-height:46px; font-size:13px; }
+.portal-feature-matrix-row .accounts-feature-switch { justify-content:center; }
 .account-id-cell .icon svg { width:14px; height:14px; }
 .accounts-search { display:flex; align-items:center; gap:8px; width:280px; }
 .accounts-search .input { min-width:0; width:100%; }

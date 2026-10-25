@@ -1,9 +1,10 @@
+import {t} from '../i18n/index.js';
 // Shared card shell for management and platform store directories.
 // All values below are already escaped or rendered by the caller's UI helpers.
 export function storeCardAddress(store) {
   const saved=String(store.address||'').trim();
   const structured=[store.prefecture,store.municipality,store.ward,store.addressDetail].filter(Boolean).join('');
-  return saved&&!['待填写','待录入','—'].includes(saved)?saved:structured||'配送地址待填写';
+  return saved&&!['待填写','待录入','—'].includes(saved)?saved:structured||t('配送地址待填写');
 }
 
 export function storeDirectoryCard({attributes='',title,subtitle,image,status,tools='',details,actions}) {

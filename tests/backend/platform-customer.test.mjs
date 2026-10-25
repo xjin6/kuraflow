@@ -63,12 +63,16 @@ test('platform customer overview is read-only, explicitly scoped and never retur
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM account_keys WHERE account_id=?').bind(f.deletedOwner).first()).n,0);
 });
 
-test('new platform APIs deny anonymous, management/store owners/members and platform members',async()=>{
+test('platform directory reads allow platform members while credentials remain owner-only',async()=>{
   const f=await fixture(),platformMember=await account({role:'platform',accountRole:'member'});
-  for(const [cookie,status] of [['',401],...[f.owner,f.manager,f.storeOwner,f.storeMember,platformMember].map(id=>[id,403])]){
+  for(const [cookie,status] of [['',401],...[f.owner,f.manager,f.storeOwner,f.storeMember].map(id=>[id,403])]){
     const actual=cookie?await session(cookie):'';
     for(const [url,body] of [[customerUrl(f),undefined],[imageUrl(f),undefined],['/api/platform/staff/password',resetBody(f)]])ok(await request(url,body,actual),status);
   }
+  const memberSession=await session(platformMember);
+  ok(await request(customerUrl(f),undefined,memberSession));
+  ok(await request(imageUrl(f),undefined,memberSession));
+  ok(await request('/api/platform/staff/password',resetBody(f),memberSession),403);
   ok(await request('/api/team/master-key',{tenantId:f.tenantId,storeId:'shared-store'},await session(platformMember)),403);
   ok(await request('/api/platform/customer?tenant=missing'),404);ok(await request('/api/platform/customer'),400);
 });

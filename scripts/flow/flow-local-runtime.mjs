@@ -7,6 +7,7 @@ import {createFlowStore} from '../../backend/flow-store.js';
 import {createFlowProvider} from '../../backend/flow-provider.js';
 import {createFlowArchive} from './flow-archive.mjs';
 import {createFlowCopilot} from './flow-copilot.mjs';
+import {flowConnectionScope} from '../../backend/flow-scope.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const safeToken=value=>typeof value==='string'&&/^[a-zA-Z0-9_.-]{16,4096}$/.test(value);
@@ -59,7 +60,7 @@ export function createLocalFlowRuntime({db,privateDir,codeKey,fetchImpl=fetch,co
       options.signal?.throwIfAborted();
       const connection=await store.getConnection(options.principal),token=connection?.data.githubToken;
       if(!safeToken(token))throw Object.assign(new Error('Flow 尚未配置，请联系平台。'),{status:409});
-      const tenant=hash(options.principal.tenantId),key=tenant+':'+hash(token);
+      const tenant=hash(flowConnectionScope(options.principal)),key=tenant+':'+hash(token);
       if(!clients.has(key))clients.set(key,copilotFactory({privateDir:path.join(privateDir,'flow-runtime-tenants',tenant,hash(token).slice(0,24)),gitHubToken:token,useLoggedInUser:false}));
       return clients.get(key).chat(options);
     }};

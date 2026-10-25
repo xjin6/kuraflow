@@ -37,6 +37,7 @@ async function fixture(t,{platform=false,url='https://profile.example.test/?page
     if(route==='/api/platform/kitchens')return response({kitchens:[{id:'tenant-test',name:'测试厨房',owner_name:'测试负责人',active:1,seats:0,avatarUrl:null,avatarVersion:0}]});
     if(route.startsWith('/api/team/list?')){
       const params=new URL(route,'https://profile.example.test').searchParams,storeId=params.get('store')||null;
+      if(platform&&!params.get('tenant'))return response({organization:{tenantId:null,name:'平台端'},accounts:[{id:person.userId,name:person.displayName,role:'platform',accountRole:person.accountRole,tenantId:null,storeId:null,status:'active',avatarUrl:person.avatarUrl,avatarVersion:person.avatarVersion}],stores:[],storeId:null,canManage:person.accountRole==='owner',needsSetup:false,limit:null});
       return response({organization:{tenantId:'tenant-test',name:'测试厨房',avatarUrl:person.organizationAvatarUrl||null,avatarVersion:person.organizationAvatarVersion||0},accounts:[{id:storeId?'store-owner':person.userId,name:storeId?'店长':person.displayName,role:storeId?'store':'admin',accountRole:'owner',tenantId:'tenant-test',storeId,status:'active',avatarUrl:storeId?null:person.avatarUrl,avatarVersion:storeId?0:person.avatarVersion}],stores:state.stores,storeId,canManage:person.accountRole==='owner',needsSetup:false,limit:3});
     }
     if(route==='/api/admin/store-code')return response({storeId:'store-a',accessCode:'TEST-ONLY-CODE-0001'});
@@ -85,15 +86,19 @@ test('ordinary management members keep their personal entry without store staff 
   assert.equal(document.querySelector('.topbar button[data-action="open-own-team"]'), null);
 });
 
-test('platform retains customer employee support and its personal footer opens an avatar editor',async t=>{
+test('platform retains customer employee support and its footer opens platform staff with avatar editing',async t=>{
   const person=principal({role:'platform',tenantId:null,organizationAvatarUrl:null,organizationAvatarVersion:0});
   const {document}=await fixture(t,{platform:true,url:'https://profile.example.test/?login=platform',person});
   await until(()=>document.querySelector('[data-action="accounts-kitchen-team"]'));
   assert.ok(document.querySelector('.nav-list [data-action="platform-stores"]'));
   assert.equal(document.querySelector('.nav-list [data-action="platform-team"]'),null);
-  const footer=document.querySelector('.sidebar-footer [data-action="platform-personal-avatar"]');assert.equal(footer.tagName,'BUTTON');
+  const footer=document.querySelector('.sidebar-footer [data-action="platform-own-team"]');assert.equal(footer.tagName,'BUTTON');
   assert.equal(footer.querySelector('img').getAttribute('src'),person.avatarUrl);
   footer.click();
+  await until(()=>document.querySelector('[data-action="accounts-staff-new"]'));
+  assert.equal(document.querySelector('#accounts-tenant'),null);
+  assert.equal(document.querySelector('#accounts-store'),null);
+  document.querySelector(`[data-member-id="${person.userId}"] [data-action="accounts-person-avatar"]`).click();
   await until(()=>document.querySelector('#accounts-avatar-form'));
   assert.equal(document.querySelector('#modal-title').textContent,'个人头像');
   assert.equal(document.querySelector('#account-avatar-file').accept,'image/png,image/jpeg,image/webp');

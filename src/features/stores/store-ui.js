@@ -1,14 +1,15 @@
+import {t, tx, ta, translatedError, setI18nText} from "../../i18n/index.js";
 import {storeDirectoryCard,storeCardAddress} from '../../ui/directory-card.js';
 import { PREFECTURES, getMunicipalities, getWards, resolveJapanAddress } from '../../shared/japan-addresses.js';
 
 export function createStoreUI(ctx) {
   const { model, ui, isCloud, escape: esc, icon, button, titleHeading, modal, storeAvatar, closeOverlay, render, toast } = ctx;
   const options = (rows, selected = '') => rows.map(row => `<option value="${esc(row.code)}" ${row.code === selected ? 'selected' : ''}>${esc(row.name)}</option>`).join('');
-  const field = (label, name, attrs, value = '') => `<div class="field"><label for="store-${name}">${label}</label><input class="input" id="store-${name}" name="${name}" value="${esc(value)}" ${attrs}></div>`;
+  const field = (label, name, attrs, value = '') => `<div class="field"><label for="store-${name}">${tx(label)}</label><input class="input" id="store-${name}" name="${name}" value="${esc(value)}" ${attrs}></div>`;
   const personalAccounts = Boolean(ctx.personalAccounts), canReadMaster = !isCloud || ctx.canManageAccounts;
   const codeCache = new Map(), codeRequests = new Map();
   let draft = null;
-  const copyIcon = id => `<button type="button" class="icon-button store-code-copy-icon" data-action="copy-store-code" data-id="${esc(id)}" aria-label="复制门店识别码" title="复制识别码">${icon('copy')}</button>`;
+  const copyIcon = id => `<button type="button" class="icon-button store-code-copy-icon" data-action="copy-store-code" data-id="${esc(id)}" ${ta("aria-label", "复制门店识别码")} ${ta("title", "复制识别码")}>${icon('copy')}</button>`;
 
   function storesPage() {
     const stores = model.getStores().filter(store => [store.name, store.city, store.address, store.contact].join(' ').toLowerCase().includes(ui.query.toLowerCase()));
@@ -16,24 +17,24 @@ export function createStoreUI(ctx) {
       resolveCode(store).then(code => {
         document.querySelectorAll('[data-store-code]').forEach(node => { if (node.dataset.storeCode === store.id) node.textContent = code; });
       }).catch(() => {
-        document.querySelectorAll('[data-store-code]').forEach(node => { if (node.dataset.storeCode === store.id) node.textContent = '暂未加载'; });
+        document.querySelectorAll('[data-store-code]').forEach(node => { if (node.dataset.storeCode === store.id) setI18nText(node, () => t("暂未加载"), "textContent"); });
       });
     }));
-    return ctx.managementHeading('stores', 'stores', button(personalAccounts?'新建门店':'新建门店账号', 'add-store', 'primary', '', 'plus')) +
-      `<div class="stores-grid">${stores.map(s => storeDirectoryCard({
+    return ctx.managementHeading('stores', 'stores', button((personalAccounts ? tx("新建门店") : tx("新建门店账号")), 'add-store', 'primary', '', 'plus')) +
+      `<div class="stores-grid">${(stores.map(s => storeDirectoryCard({
         attributes:`data-store-card="${esc(s.id)}"`,
         title:esc(s.name),
         subtitle:esc(storeCardAddress(s)),
         image:storeAvatar(s),
-        status:'<span class="status-badge delivered"><i></i>已启用</span>',
+        status:`<span class="status-badge delivered"><i></i>${tx("已启用")}</span>`,
         tools:'',
-        details:`<div><span>联系人</span><strong>${esc(s.contact || '待填写')}</strong></div><div><span>联系电话</span><strong>${esc(s.phone || '待填写')}</strong></div>${canReadMaster && (s.accessCode || isCloud) ? `<div class="store-code-row"><span>负责人码</span><div class="store-code-control"><code class="store-code-value" data-store-code="${esc(s.id)}">${esc(s.accessCode || codeCache.get(s.id) || '加载中…')}</code>${copyIcon(s.id)}</div></div>` : ''}<div><span>报价方案</span>${ctx.pricingPicker?.(s)||'<strong>独立报价</strong>'}</div><div><span>合作订单</span><strong>${model.state.orders.filter(o => o.storeId === s.id).length} 笔</strong></div>`,
-        actions:button('编辑', 'edit-store', 'secondary', `data-id="${esc(s.id)}"`, 'edit')+button('结算', 'store-settlement', 'secondary', `data-id="${esc(s.id)}"`, 'wallet')+button('报价', 'store-prices', 'secondary', `data-id="${esc(s.id)}"`, 'tag')
-      })).join('') || '<div class="empty-state"><h3>暂无门店</h3></div>'}</div>`;
+        details:`<div><span>${tx("联系人")}</span><strong>${esc((s.contact || t("待填写")))}</strong></div><div><span>${tx("联系电话")}</span><strong>${esc((s.phone || t("待填写")))}</strong></div>${(canReadMaster && (s.accessCode || isCloud) ? `<div class="store-code-row"><span>${tx("负责人码")}</span><div class="store-code-control"><code class="store-code-value" data-store-code="${esc(s.id)}">${esc((s.accessCode || codeCache.get(s.id) || t("加载中…")))}</code>${copyIcon(s.id)}</div></div>` : '')}<div><span>${tx("报价方案")}</span>${(ctx.pricingPicker?.(s) || `<strong>${tx("独立报价")}</strong>`)}</div><div><span>${tx("合作订单")}</span><strong>${tx("{0} 笔", [model.state.orders.filter(o => o.storeId === s.id).length])}</strong></div>`,
+        actions:button(tx("编辑"), 'edit-store', 'secondary', `data-id="${esc(s.id)}"`, 'edit')+button(tx("结算"), 'store-settlement', 'secondary', `data-id="${esc(s.id)}"`, 'wallet')+button(tx("报价"), 'store-prices', 'secondary', `data-id="${esc(s.id)}"`, 'tag')
+      })).join('') || `<div class="empty-state"><h3>${tx("暂无门店")}</h3></div>`)}</div>`;
   }
 
   function imageEditor(image) {
-    return `<div class="field field-full store-photo-field"><label>门店图片</label><div class="store-photo-upload"><div class="store-photo-preview" id="store-photo-preview">${image ? `<img src="${esc(image)}" alt="门店图片预览">` : icon('store')}</div><div class="store-photo-controls"><div class="store-photo-actions">${button(image ? '更换图片' : '上传图片', 'store-image-upload', 'secondary', 'type="button"')}${button('裁剪', 'store-image-crop', 'ghost', `type="button" ${image ? '' : 'hidden'}`)}${button('移除', 'store-image-remove', 'ghost', `type="button" ${image ? '' : 'hidden'}`)}</div><span class="store-photo-format">正方形 · JPG / PNG / WebP · 最大 5 MB</span></div><input id="store-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="上传门店图片"></div><div class="store-crop-editor" id="store-crop-editor" hidden><div class="store-crop-heading"><strong>裁剪为正方形</strong><span>拖动调整位置</span></div><canvas class="store-crop-canvas" id="store-crop-canvas" width="512" height="512" tabindex="0" role="img" aria-label="门店图片裁剪预览，可拖动或使用方向键调整位置"></canvas><label class="store-crop-zoom" for="store-crop-zoom"><span>缩放</span><input id="store-crop-zoom" aria-label="缩放" type="range" min="1" max="3" step="0.01" value="1"><output id="store-crop-scale">100%</output></label><div class="store-crop-actions">${button('取消裁剪', 'store-image-cancel', 'secondary', 'type="button"')}${button('应用裁剪', 'store-image-apply', 'primary', 'type="button"')}</div></div><div class="inline-editor-feedback" id="store-photo-error" role="alert"></div></div>`;
+    return `<div class="field field-full store-photo-field"><label>${tx("门店图片")}</label><div class="store-photo-upload"><div class="store-photo-preview" id="store-photo-preview">${(image ? `<img src="${esc(image)}" ${ta("alt", "门店图片预览")}>` : icon('store'))}</div><div class="store-photo-controls"><div class="store-photo-actions">${button((image ? tx("更换图片") : tx("上传图片")), 'store-image-upload', 'secondary', 'type="button"')}${button(tx("裁剪"), 'store-image-crop', 'ghost', `type="button" ${image ? '' : 'hidden'}`)}${button(tx("移除"), 'store-image-remove', 'ghost', `type="button" ${image ? '' : 'hidden'}`)}</div><span class="store-photo-format">${tx("正方形 · JPG / PNG / WebP · 最大 5 MB")}</span></div><input id="store-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden ${ta("aria-label", "上传门店图片")}></div><div class="store-crop-editor" id="store-crop-editor" hidden><div class="store-crop-heading"><strong>${tx("裁剪为正方形")}</strong><span>${tx("拖动调整位置")}</span></div><canvas class="store-crop-canvas" id="store-crop-canvas" width="512" height="512" tabindex="0" role="img" ${ta("aria-label", "门店图片裁剪预览，可拖动或使用方向键调整位置")}></canvas><label class="store-crop-zoom" for="store-crop-zoom"><span>${tx("缩放")}</span><input id="store-crop-zoom" ${ta("aria-label", "缩放")} type="range" min="1" max="3" step="0.01" value="1"><output id="store-crop-scale">100%</output></label><div class="store-crop-actions">${button(tx("取消裁剪"), 'store-image-cancel', 'secondary', 'type="button"')}${button(tx("应用裁剪"), 'store-image-apply', 'primary', 'type="button"')}</div></div><div class="inline-editor-feedback" id="store-photo-error" role="alert"></div></div>`;
   }
 
   function addressValues(store = {}) {
@@ -61,14 +62,14 @@ export function createStoreUI(ctx) {
 
   function addressFields(address) {
     const municipalities = getMunicipalities(address.prefectureCode), wards = getWards(address.prefectureCode, address.municipalityCode);
-    return `<div class="field-full store-address-selects"><div class="field"><label for="store-prefecture">都道府县</label><select class="input" id="store-prefecture" name="prefectureCode" required><option value="">请选择都道府县</option>${options(PREFECTURES, address.prefectureCode)}</select></div><div class="field"><label for="store-municipality">市区町村</label><select class="input" id="store-municipality" name="municipalityCode" required ${address.prefectureCode ? '' : 'disabled'}><option value="">${address.prefectureCode ? '请选择市区町村' : '请先选择都道府县'}</option>${options(municipalities, address.municipalityCode)}</select></div><div class="field" id="store-ward-field" ${wards.length ? '' : 'hidden'}><label for="store-ward">行政区</label><select class="input" id="store-ward" name="wardCode" ${wards.length ? 'required' : 'disabled'}><option value="">请选择行政区</option>${options(wards, address.wardCode)}</select></div></div><div class="field field-full"><label for="store-address-detail">具体地址</label><textarea class="input" id="store-address-detail" name="addressDetail" required rows="2" maxlength="180" autocomplete="street-address" placeholder="町名、丁目、番地、楼名及房间号">${esc(address.addressDetail)}</textarea><p class="address-preview" id="store-address-preview" aria-live="polite" hidden></p></div>`;
+    return `<div class="field-full store-address-selects"><div class="field"><label for="store-prefecture">${tx("都道府县")}</label><select class="input" id="store-prefecture" name="prefectureCode" required><option value="">${tx("请选择都道府县")}</option>${options(PREFECTURES, address.prefectureCode)}</select></div><div class="field"><label for="store-municipality">${tx("市区町村")}</label><select class="input" id="store-municipality" name="municipalityCode" required ${address.prefectureCode ? '' : 'disabled'}><option value="">${(address.prefectureCode ? tx("请选择市区町村") : tx("请先选择都道府县"))}</option>${options(municipalities, address.municipalityCode)}</select></div><div class="field" id="store-ward-field" ${wards.length ? '' : 'hidden'}><label for="store-ward">${tx("行政区")}</label><select class="input" id="store-ward" name="wardCode" ${wards.length ? 'required' : 'disabled'}><option value="">${tx("请选择行政区")}</option>${options(wards, address.wardCode)}</select></div></div><div class="field field-full"><label for="store-address-detail">${tx("具体地址")}</label><textarea class="input" id="store-address-detail" name="addressDetail" required rows="2" maxlength="180" autocomplete="street-address" ${ta("placeholder", "町名、丁目、番地、楼名及房间号")}>${esc(address.addressDetail)}</textarea><p class="address-preview" id="store-address-preview" aria-live="polite" hidden></p></div>`;
   }
 
   function openForm(store = null) {
     if (store?.deletedAt) throw new Error('该门店已删除。');
     draft = { storeId: store?.id || '', image: store?.image || '', sourceImage: null, crop: null, loading: false };
     const address = addressValues(store || {});
-    modal(store ? '编辑门店' : personalAccounts?'新建门店':'新建门店账号', `<div class="form-grid store-create-grid"><div class="field-full store-identity-fields">${imageEditor(draft.image)}<div class="field"><label for="store-name">门店名称</label><input class="input" id="store-name" name="name" value="${esc(store?.name)}" required maxlength="60" autocomplete="organization" placeholder="例如：杨国福大阪难波店"></div></div>${addressFields(address)}${field('联系人', 'contact', `required maxlength="30" autocomplete="name" placeholder="门店负责人姓名"`, store?.contact === '待录入' ? '' : store?.contact)}${field('联系电话', 'phone', `type="tel" inputmode="tel" required maxlength="24" autocomplete="tel" placeholder="例如：090-1234-5678"`, store?.phone)}${store && canReadMaster ? `<div class="field field-full store-edit-code"><label>负责人码</label><div><code data-store-code="${esc(store.id)}">${esc(store.accessCode || codeCache.get(store.id) || '加载中…')}</code>${copyIcon(store.id)}</div></div>` : ''}</div><div class="inline-editor-feedback" id="store-form-error" role="alert"></div>${store ? `<div class="store-delete-confirm" id="store-delete-confirm" hidden><strong>删除“${esc(store.name)}”？</strong><p>删除后门店账号将停用，历史订单与账单保留。</p><div>${button('保留门店', 'cancel-delete-store', 'secondary', 'type="button"')}${button('确认删除', 'confirm-delete-store', 'danger', `type="button" data-id="${esc(store.id)}"`, 'trash')}</div><div id="store-delete-error" class="inline-editor-feedback" role="alert"></div></div>` : ''}`, (store ? button('删除门店', 'delete-store', 'danger', 'type="button"', 'trash') : '') + button('取消', 'close', 'secondary', 'type="button"') + `<button type="submit" class="btn btn-primary">${store ? '保存修改' : personalAccounts?'创建门店':'创建账号'}</button>`, 'store-form');
+    modal((store ? tx("编辑门店") : (personalAccounts ? tx("新建门店") : tx("新建门店账号"))), `<div class="form-grid store-create-grid"><div class="field-full store-identity-fields">${imageEditor(draft.image)}<div class="field"><label for="store-name">${tx("门店名称")}</label><input class="input" id="store-name" name="name" value="${esc(store?.name)}" required maxlength="60" autocomplete="organization" ${ta("placeholder", "例如：杨国福大阪难波店")}></div></div>${addressFields(address)}${field(tx("联系人"), 'contact', `required maxlength="30" autocomplete="name" placeholder="门店负责人姓名"`, store?.contact === '待录入' ? '' : store?.contact)}${field(tx("联系电话"), 'phone', `type="tel" inputmode="tel" required maxlength="24" autocomplete="tel" placeholder="例如：090-1234-5678"`, store?.phone)}${(store && canReadMaster ? `<div class="field field-full store-edit-code"><label>${tx("负责人码")}</label><div><code data-store-code="${esc(store.id)}">${esc((store.accessCode || codeCache.get(store.id) || t("加载中…")))}</code>${copyIcon(store.id)}</div></div>` : '')}</div><div class="inline-editor-feedback" id="store-form-error" role="alert"></div>${(store ? `<div class="store-delete-confirm" id="store-delete-confirm" hidden><strong>${tx("删除“{0}”？", [esc(store.name)])}</strong><p>${tx("删除后门店账号将停用，历史订单与账单保留。")}</p><div>${button(tx("保留门店"), 'cancel-delete-store', 'secondary', 'type="button"')}${button(tx("确认删除"), 'confirm-delete-store', 'danger', `type="button" data-id="${esc(store.id)}"`, 'trash')}</div><div id="store-delete-error" class="inline-editor-feedback" role="alert"></div></div>` : '')}`, (store ? button(tx("删除门店"), 'delete-store', 'danger', 'type="button"', 'trash') : '') + button(tx("取消"), 'close', 'secondary', 'type="button"') + `<button type="submit" class="btn btn-primary">${(store ? tx("保存修改") : (personalAccounts ? tx("创建门店") : tx("创建账号")))}</button>`, 'store-form');
     const form = document.querySelector('#store-form');
     form.dataset.storeId = store?.id || '';
     updateAddress(form.elements.addressDetail);
@@ -81,7 +82,7 @@ export function createStoreUI(ctx) {
     bindCropCanvas(form.querySelector('#store-crop-canvas'));
     if (store && canReadMaster && !store.accessCode && isCloud) resolveCode(store).then(code => {
       if (form.isConnected) form.querySelector('[data-store-code]').textContent = code;
-    }).catch(() => { if (form.isConnected) form.querySelector('[data-store-code]').textContent = '暂未加载'; });
+    }).catch(() => { if (form.isConnected) setI18nText(form.querySelector('[data-store-code]'), () => t("暂未加载"), "textContent"); });
   }
   function openCreate() { openForm(); }
   function openEdit(id) {
@@ -95,14 +96,14 @@ export function createStoreUI(ctx) {
     if (!form || !['prefectureCode', 'municipalityCode', 'wardCode', 'addressDetail'].includes(input.name)) return false;
     const prefecture = form.elements.prefectureCode, municipality = form.elements.municipalityCode, ward = form.elements.wardCode;
     if (input === prefecture) {
-      municipality.innerHTML = `<option value="">${prefecture.value ? '请选择市区町村' : '请先选择都道府县'}</option>` + options(getMunicipalities(prefecture.value));
+      municipality.innerHTML = `<option value="">${(prefecture.value ? tx("请选择市区町村") : tx("请先选择都道府县"))}</option>` + options(getMunicipalities(prefecture.value));
       municipality.disabled = !prefecture.value;
-      ward.innerHTML = '<option value="">请选择行政区</option>';
+      ward.innerHTML = `<option value="">${tx("请选择行政区")}</option>`;
       ward.disabled = true; ward.required = false; form.querySelector('#store-ward-field').hidden = true;
     }
     if (input === municipality) {
       const wards = getWards(prefecture.value, municipality.value);
-      ward.innerHTML = '<option value="">请选择行政区</option>' + options(wards);
+      ward.innerHTML = `<option value="">${tx("请选择行政区")}</option>` + options(wards);
       ward.disabled = !wards.length; ward.required = !!wards.length;
       form.querySelector('#store-ward-field').hidden = !wards.length;
     }
@@ -141,7 +142,7 @@ export function createStoreUI(ctx) {
       draft = null;
       return store;
     } catch (error) {
-      form.querySelector('#store-form-error').textContent = error.message;
+      form.querySelector('#store-form-error').textContent = translatedError(error.message);
       throw error;
     }
   }
@@ -166,7 +167,7 @@ export function createStoreUI(ctx) {
       if (!form.isConnected || currentDraft !== draft) return;
       if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 40000000) throw new Error('图片尺寸过大，请使用 4000 万像素以内的图片。');
       beginCrop(image);
-    } catch (error) { if (form.isConnected) { errorNode.textContent = error.message || '无法读取图片，请重新选择。'; setPhotoBusy(form, false); } }
+    } catch (error) { if (form.isConnected) { setI18nText(errorNode, () => (translatedError(error.message) || t("无法读取图片，请重新选择。")), "textContent"); setPhotoBusy(form, false); } }
     finally { currentDraft.loading = false; }
   }
   async function recropImage() {
@@ -242,8 +243,8 @@ export function createStoreUI(ctx) {
   }
   function updatePhotoPreview() {
     const form = document.querySelector('#store-form');
-    form.querySelector('#store-photo-preview').innerHTML = draft.image ? `<img src="${esc(draft.image)}" alt="门店图片预览">` : icon('store');
-    form.querySelector('[data-action="store-image-upload"]').textContent = draft.image ? '更换图片' : '上传图片';
+    form.querySelector('#store-photo-preview').innerHTML = draft.image ? `<img src="${esc(draft.image)}" ${ta("alt", "门店图片预览")}>` : icon('store');
+    setI18nText(form.querySelector('[data-action="store-image-upload"]'), () => (draft.image ? t("更换图片") : t("上传图片")), "textContent");
     form.querySelectorAll('[data-action="store-image-crop"], [data-action="store-image-remove"]').forEach(button => { button.hidden = !draft.image; });
     form.querySelector('#store-photo-error').textContent = '';
   }
@@ -270,7 +271,7 @@ export function createStoreUI(ctx) {
         await model.deleteStore(el.dataset.id);
         if (ui.quoteStore === el.dataset.id) ui.quoteStore = model.state.stores.find(store => !store.deletedAt)?.id || '';
         draft = null; closeOverlay(); render(); toast('门店已删除。');
-      } catch (error) { if (form?.isConnected) { form.querySelector('#store-delete-error').textContent = error.message; el.disabled = false; } throw error; }
+      } catch (error) { if (form?.isConnected) { form.querySelector('#store-delete-error').textContent = translatedError(error.message); el.disabled = false; } throw error; }
     }
     return true;
   }
@@ -285,7 +286,7 @@ export function createStoreUI(ctx) {
   }
   async function showCode(store, created = false) {
     const accessCode = await resolveCode(store);
-    modal(created ? '门店账号已创建' : '门店识别码', `<div class="store-code-result"><div class="store-code-store">${storeAvatar(store)}<div><h3>${esc(store.name)}</h3><p>${esc(store.contact || '')}${store.phone ? ' · ' + esc(store.phone) : ''}</p></div></div><label class="small-label" for="store-access-code">门店识别码</label><input class="store-access-code" id="store-access-code" value="${esc(accessCode)}" readonly aria-label="门店识别码" spellcheck="false">${created ? `<div class="store-created-address">${icon('pin')}<span>${esc(store.address)}</span></div>` : ''}</div>`, button('完成', 'close', 'secondary') + button('复制识别码', 'copy-store-code', 'primary', `data-id="${esc(store.id)}"`));
+    modal((created ? tx("门店账号已创建") : tx("门店识别码")), `<div class="store-code-result"><div class="store-code-store">${storeAvatar(store)}<div><h3>${esc(store.name)}</h3><p>${esc((store.contact || ''))}${(store.phone ? ' · ' + esc(store.phone) : '')}</p></div></div><label class="small-label" for="store-access-code">${tx("门店识别码")}</label><input class="store-access-code" id="store-access-code" value="${esc(accessCode)}" readonly ${ta("aria-label", "门店识别码")} spellcheck="false">${(created ? `<div class="store-created-address">${icon('pin')}<span>${esc(store.address)}</span></div>` : '')}</div>`, button(tx("完成"), 'close', 'secondary') + button(tx("复制识别码"), 'copy-store-code', 'primary', `data-id="${esc(store.id)}"`));
   }
   async function copyCode(id) {
     const store = model.getStore(id), accessCode = await resolveCode(store);

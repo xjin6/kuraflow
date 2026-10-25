@@ -6,11 +6,8 @@
 .flow-launcher > span:first-of-type { font-family:Geist,-apple-system,BlinkMacSystemFont,sans-serif; font-size:14px; font-weight:550; letter-spacing:-.01em; }
 .flow-launcher .flow-launcher-key { margin-left:auto; padding:0 5px; color:#c0ccd5; font-size:9px; letter-spacing:.04em; border:1px solid rgba(226,234,242,.2); border-radius:3px; line-height:16px; }
 .flow-launcher:hover:not(:disabled),.flow-launcher[aria-expanded="true"] { background:rgba(255,255,255,.1); border-color:rgba(230,237,242,.3); }
-.topbar-right > .flow-launcher-compact { display:inline-flex; flex-shrink:0; align-items:center; justify-content:center; padding:0; border-radius:7px; background:transparent; transition:background .18s,box-shadow .18s; }
-.flow-launcher-compact > .flow-mark { width:24px; height:24px; transition:transform .2s,filter .2s; }
-.topbar-right > .flow-launcher-compact:hover:not(:disabled),.topbar-right > .flow-launcher-compact[aria-expanded="true"] { background:#edf0fc; }
-.flow-launcher-compact:hover:not(:disabled) > .flow-mark { transform:translateY(-1px); filter:drop-shadow(0 2px 3px rgba(88,98,216,.23)); }
-.flow-launcher-compact:focus-visible { outline:2px solid #727dea; outline-offset:3px; }
+.topbar-right > .flow-launcher-compact { display:inline-flex; flex-shrink:0; align-items:center; justify-content:center; padding:0; }
+.flow-launcher-compact > .flow-mark { width:20px; height:20px; transition:transform .2s,filter .2s; }
 .topbar-right > .flow-launcher-compact:disabled { opacity:1; background:transparent; box-shadow:none; cursor:not-allowed; }
 .flow-launcher:disabled { cursor:not-allowed; }
 .flow-launcher-compact:disabled > .flow-mark,.flow-launcher:disabled > .flow-mark { filter:grayscale(1); opacity:.38; transform:none; }

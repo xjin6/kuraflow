@@ -50,7 +50,9 @@ test('avatars enforce personal, role, tenant and store boundaries for reads and 
   const f=await fixture();const ownerAvatar=ok(await request('/api/team/avatar',save(f.owner),f.owner.cookie)).account.avatarUrl;
   const memberAvatar=ok(await request('/api/team/avatar',save(f.member),f.member.cookie)).account.avatarUrl;
   const storeAvatar=ok(await request('/api/team/avatar',save(f.storeMember),f.storeOwner.cookie)).account.avatarUrl;
-  for(const cookie of [f.foreign.cookie,f.storeOwner.cookie,f.storeMember.cookie,f.platformMember.cookie]){ok(await request(ownerAvatar,undefined,cookie),403);ok(await request('/api/team/avatar',{accountId:f.owner.id,version:1,image},cookie),403);}
+  for(const cookie of [f.foreign.cookie,f.storeOwner.cookie,f.storeMember.cookie]){ok(await request(ownerAvatar,undefined,cookie),403);ok(await request('/api/team/avatar',{accountId:f.owner.id,version:1,image},cookie),403);}
+  ok(await request(ownerAvatar,undefined,f.platformMember.cookie));
+  ok(await request('/api/team/avatar',{accountId:f.owner.id,version:1,image},f.platformMember.cookie),403);
   ok(await request(ownerAvatar,undefined,f.member.cookie));ok(await request(memberAvatar,undefined,f.colleague.cookie));
   ok(await request('/api/team/avatar',{accountId:f.colleague.id,version:0,image},f.member.cookie),403);
   ok(await request(storeAvatar,undefined,f.sibling.cookie),403);ok(await request('/api/team/avatar',save(f.sibling),f.storeOwner.cookie),403);
@@ -61,6 +63,10 @@ test('avatars enforce personal, role, tenant and store boundaries for reads and 
   for(const cookie of [f.member.cookie,f.storeOwner.cookie,f.storeMember.cookie,f.foreign.cookie,f.platformMember.cookie])ok(await request('/api/organization/avatar',{tenantId:f.tenantId,version:1,image},cookie),403);
   ok(await request('/api/organization/avatar',{tenantId:f.tenantId,version:1,image},f.platform.cookie));
   ok(await request('/api/team/avatar',save(f.platform),f.platform.cookie));
+  const platformMemberAvatar=ok(await request('/api/team/avatar',save(f.platformMember),f.platform.cookie)).account.avatarUrl;
+  ok(await request(platformMemberAvatar,undefined,f.platformMember.cookie));
+  ok(await request('/api/team/avatar',{...save(f.platformMember),version:1},f.platformMember.cookie));
+  ok(await request('/api/team/avatar',{...save(f.platform),version:1},f.platformMember.cookie),403);
 });
 
 test('avatar compare-and-set permits one concurrent edit and removal has its own retained revision',async()=>{

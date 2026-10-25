@@ -8,6 +8,7 @@ import {JSDOM,VirtualConsole} from 'jsdom';
 const bundle=(await build({absWorkingDir:projectRoot,entryPoints:[browserSources['platform-app.js']],bundle:true,write:false,format:'esm',target:'es2022',logLevel:'silent'})).outputFiles[0].text;
 const kitchens=[{id:'tenant-a',name:'测试厨房甲',owner_name:'负责人甲',active:1,seats:1},{id:'tenant-b',name:'测试厨房乙',owner_name:'负责人乙',active:1,seats:0}];
 const config=(tenantId='tenant-a',changes={})=>({tenantId,name:kitchens.find(row=>row.id===tenantId)?.name,version:4,flow:{enabled:true,model:'model-one'},connection:{configured:true,hasToken:true,model:'model-one',models:[{id:'model-one',name:'模型一'},{id:'model-two',name:'模型二'}],fetchedAt:Date.now(),cacheState:'fresh'},...changes});
+const portals=(flowEnabled=false,multilingualEnabled=false)=>({admin:{flowEnabled,multilingualEnabled,notificationsEnabled:true},store:{flowEnabled:false,multilingualEnabled:false,notificationsEnabled:true}});
 const response=(data,status=200)=>({ok:status>=200&&status<300,status,json:async()=>data});
 
 async function until(check,label='UI did not settle') {
@@ -19,9 +20,11 @@ async function fixture(t,route) {
   console.on('jsdomError',error=>errors.push(error));
   const dom=new JSDOM('<div id="app"></div><div id="overlay-root"></div><div id="toast-container"></div>',{url:'https://accounts.example.test/?login=platform',runScripts:'outside-only',virtualConsole:console});
   t.after(()=>{dom.window.close();assert.deepEqual(errors,[]);});
-  const {window}=dom;
+  const {window}=dom;window.structuredClone=structuredClone;
   window.__KURAFLOW_ACCOUNT_PRINCIPAL__={role:'platform',accountRole:'owner',displayName:'测试平台'};
   window.fetch=async(path,options={})=>{
+    if(String(path)==='/api/flow/status')return response({enabled:false,available:false});
+    if(String(path).startsWith('/api/notifications?'))return response({items:[],unreadCount:0,latestId:0,hasMore:false});
     const call={path:String(path),method:options.method||'GET',body:options.body===undefined?undefined:JSON.parse(options.body)};calls.push(call);
     if(call.path==='/api/platform/kitchens')return response({kitchens});
     return route(call);
@@ -59,7 +62,7 @@ test('platform config uses the kitchen scope, shared model dropdown and CAS feat
   submit(window,form);
   await until(()=>!document.getElementById('accounts-flow-form'));
   const write=calls.find(call=>call.path==='/api/platform/flow');
-  assert.deepEqual(write.body,{tenantId:'tenant-a',version:4,enabled:true,model:'model-two'});
+  assert.deepEqual(write.body,{tenantId:'tenant-a',version:4,enabled:true,model:'model-two',multilingualEnabled:false,portals:portals(true)});
   assert.equal(window.localStorage.length,0);assert.equal(window.sessionStorage.length,0);
 });
 
@@ -155,5 +158,67 @@ test('disabled Flow can be saved while no GitHub connection or catalogue is avai
   });
   const form=await open(document);assert.equal(form.elements.flowModel.disabled,true);
   submit(window,form);await until(()=>!document.getElementById('accounts-flow-form'));
-  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body,{tenantId:'tenant-a',version:0,enabled:false,model:null});
+  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body,{tenantId:'tenant-a',version:0,enabled:false,model:null,multilingualEnabled:false,portals:portals()});
+});
+
+test('multilingual toggle loads and saves atomically without requiring a Flow connection',async t=>{
+  const empty=config('tenant-a',{flow:{enabled:false,model:null},multilingual:{enabled:false},connection:{configured:false,models:[]}});
+  const {window,document,calls}=await fixture(t,call=>{
+    if(call.path==='/api/platform/flow?tenant=tenant-a')return response(empty);
+    if(call.path==='/api/platform/flow')return response({...empty,version:5,multilingual:{enabled:true}});
+    throw Error(call.path);
+  });
+  const form=await open(document),toggle=form.elements.multilingualEnabled;assert.ok(toggle);assert.equal(toggle.checked,false);assert.equal(toggle.disabled,false);
+  change(window,toggle,true);assert.equal(toggle.getAttribute('aria-checked'),'true');
+  submit(window,form);await until(()=>!document.getElementById('accounts-flow-form'));
+  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body,{tenantId:'tenant-a',version:4,enabled:false,model:null,multilingualEnabled:true,portals:portals(false,true)});
+});
+
+test('language-only draft is saved while enabled Flow has temporarily unavailable connection metadata',async t=>{
+  const offline=config('tenant-a',{multilingual:{enabled:false},connection:{configured:false,models:[]}});
+  const {window,document,calls}=await fixture(t,call=>{
+    if(call.path==='/api/platform/flow?tenant=tenant-a')return response(offline);
+    if(call.path==='/api/platform/flow')return response({...offline,version:5,multilingual:{enabled:true}});
+    throw Error(call.path);
+  });
+  const form=await open(document);change(window,form.elements.multilingualEnabled,true);submit(window,form);await until(()=>!document.getElementById('accounts-flow-form'));
+  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body,{tenantId:'tenant-a',version:4,enabled:true,model:null,multilingualEnabled:true,portals:portals(true,true)});
+});
+
+test('feature matrix saves independent management and store controls without overwriting siblings',async t=>{
+  const current={admin:{flowEnabled:true,multilingualEnabled:true,notificationsEnabled:true},store:{flowEnabled:false,multilingualEnabled:false,notificationsEnabled:true}};
+  const {window,document,calls}=await fixture(t,call=>{
+    if(call.path==='/api/platform/flow?tenant=tenant-a')return response(config('tenant-a',{portals:current,multilingual:{enabled:true}}));
+    if(call.path==='/api/platform/flow')return response(config('tenant-a',{version:5}));
+    throw Error(call.path);
+  });
+  const form=await open(document);assert.equal(form.querySelectorAll('.portal-feature-matrix input').length,6);
+  change(window,form.elements.storeFlowEnabled,true);
+  change(window,form.elements.adminNotificationsEnabled,false);
+  change(window,form.elements.storeMultilingualEnabled,true);
+  assert.equal(form.elements.flowEnabled.checked,true);assert.equal(form.elements.multilingualEnabled.checked,true);
+  assert.equal(form.elements.storeNotificationsEnabled.checked,true);
+  submit(window,form);await until(()=>!document.getElementById('accounts-flow-form'));
+  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body.portals,{
+    admin:{flowEnabled:true,multilingualEnabled:true,notificationsEnabled:false},
+    store:{flowEnabled:true,multilingualEnabled:true,notificationsEnabled:true},
+  });
+});
+
+test('platform owner configures its own Flow namespace without customer feature controls',async t=>{
+  const empty=config('@platform',{version:0,flow:{enabled:false,model:null},connection:{configured:false,models:[]}});
+  const {window,document,calls}=await fixture(t,call=>{
+    if(call.path==='/api/platform/flow?tenant=%40platform')return response(empty);
+    if(call.path==='/api/platform/flow')return response({...empty,version:1});
+    throw Error(call.path);
+  });
+  await until(()=>document.querySelector('[data-flow-action="open"]:not(:disabled)'));
+  click(document,'[data-flow-action="open"]');await until(()=>document.querySelector('[data-flow-action="configure"]'));
+  click(document,'[data-flow-action="configure"]');
+  await until(()=>document.getElementById('accounts-flow-form')?.getAttribute('aria-busy')==='false');
+  const form=document.getElementById('accounts-flow-form');assert.equal(form.dataset.tenant,'@platform');
+  assert.equal(form.querySelector('.portal-feature-matrix'),null);assert.equal(form.querySelector('.accounts-flow-customer').textContent,'平台端');
+  assert.ok(form.elements.flowEnabled);assert.equal(form.elements.storeFlowEnabled,undefined);
+  submit(window,form);await until(()=>!document.getElementById('accounts-flow-form'));
+  assert.deepEqual(calls.find(call=>call.path==='/api/platform/flow').body,{tenantId:'@platform',version:0,enabled:false,model:null});
 });

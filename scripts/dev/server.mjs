@@ -8,6 +8,9 @@ const mime={'.mjs':'text/javascript','.html':'text/html','.js':'text/javascript'
 const files=new Map(Object.entries({...styleSources,...iconSources,'index.html':'index.html'}));
 for(const source of Object.values(browserSources))files.set(source,source);
 files.set(privateSeed,privateSeed);
+files.set('src/i18n/index.js','src/i18n/index.js');
+files.set('src/i18n/messages.js','src/i18n/messages.js');
+for(const locale of ['ja','en','vi'])files.set(`src/i18n/locales/${locale}.js`,`src/i18n/locales/${locale}.js`);
 for(const file of ['public/vendor/pdf-engine.js','public/vendor/pdf-engine.LICENSE.txt','public/vendor/fontkit-LICENSE.txt','public/fonts/KuraflowDocumentSans.ttf','public/fonts/KuraflowDocumentSerif.ttf','public/fonts/NotoSansSC-LICENSE.txt','public/fonts/Geist-Variable.woff2','public/fonts/GeistMono-Variable.woff2','public/fonts/LICENSE.txt'])files.set(file,file);
 for(const file of ['永辉株式会社10.5纳品书.pdf','附件一：产品清单.pdf','每度商事产品成本价格表.xlsx','每度商事_客户产品报价单_.pdf','杨国福京都河原店_2026年9月请求书_含运费.pdf','订货单案例.jpg'])files.set('materials/'+file,'private-preview/materials/'+file);
 for(const color of ['blue','purple','orange'])for(const suffix of ['.svg','-32.png','-apple-touch.png','-kanji.svg','-english.svg','-sidebar-kanji.svg','-sidebar-english.svg']){

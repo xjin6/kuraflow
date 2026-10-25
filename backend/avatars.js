@@ -3,6 +3,7 @@ import {deployment} from './auth.js';
 const MAX_BYTES=204800,MAX_JSON=280000;
 const fail=(message,status=400,code='AVATAR_ERROR')=>{throw Object.assign(new Error(message),{status,code});};
 const isPlatformOwner=actor=>actor.role==='platform'&&actor.accountRole==='owner'&&actor.tenantId==null&&actor.storeId==null;
+const isPlatform=actor=>actor.role==='platform'&&['owner','member'].includes(actor.accountRole)&&actor.tenantId==null&&actor.storeId==null;
 const identifier=value=>{if(typeof value!=='string'||!value.trim()||value.length>160)fail('头像所属账号或组织不正确。');return value;};
 const metadata=(kind,id,row)=>({avatarUrl:row?.has_image?'/api/'+(kind==='account'?'account-avatar?account=':'organization-avatar?tenant=')+encodeURIComponent(id)+'&v='+row.version:null,avatarVersion:row?.version||0});
 
@@ -87,16 +88,16 @@ async function scopedAccount(db,actor,id,write=false) {
   const ownTeam=ownTenant&&target.role===actor.role&&target.store_id===actor.storeId;
   const kitchenOwner=actor.role==='admin'&&actor.accountRole==='owner'&&ownTenant&&['admin','store'].includes(target.role);
   const storeOwner=actor.role==='store'&&actor.accountRole==='owner'&&ownTeam;
-  if(!(self||isPlatformOwner(actor)||kitchenOwner||storeOwner||!write&&ownTeam))fail('无权访问此账号头像。',403);
+  if(!(self||isPlatformOwner(actor)||kitchenOwner||storeOwner||!write&&(ownTeam||isPlatform(actor))))fail('无权访问此账号头像。',403);
   if(target.deleted_at&&(write||!(isPlatformOwner(actor)||kitchenOwner||storeOwner)))fail('此管理员已删除，请先恢复。',404);
   if(write&&!self&&!isPlatformOwner(actor)&&!kitchenOwner&&!storeOwner)fail('仅负责人可以修改其他员工头像。',403);
-  if(target.role==='platform'&&!self)fail('无权访问此账号头像。',403);
+  if(target.role==='platform'&&!self&&!isPlatform(actor))fail('无权访问此账号头像。',403);
   if(write&&target.store_id){const tenant=await db.prepare('SELECT core_json FROM tenants WHERE id=?').bind(target.tenant_id).first();if(!tenant||!JSON.parse(tenant.core_json).stores?.some(store=>store.id===target.store_id&&!store.deletedAt))fail('门店不存在或已删除。',404);}
   return target;
 }
 async function scopedOrganization(db,actor,id,write=false) {
   const tenantId=identifier(id);
-  if(!isPlatformOwner(actor)&&actor.tenantId!==tenantId)fail('无权访问此厨房头像。',403);
+  if(!isPlatform(actor)&&actor.tenantId!==tenantId)fail('无权访问此厨房头像。',403);
   if(write&&!isPlatformOwner(actor)&&!(actor.role==='admin'&&actor.accountRole==='owner'&&actor.tenantId===tenantId))fail('仅厨房负责人可以修改厨房头像。',403);
   const tenant=await db.prepare('SELECT id FROM tenants WHERE id=?').bind(tenantId).first();if(!tenant)fail('中央厨房不存在。',404);return tenant;
 }

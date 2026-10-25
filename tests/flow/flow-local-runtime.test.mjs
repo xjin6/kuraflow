@@ -29,6 +29,8 @@ class D1 {
     for(const file of readdirSync(migrationDir).filter(name=>name.endsWith('.sql')&&name<'0008').sort())this.sqlite.exec(readFileSync(new URL(file,migrationDir),'utf8'));
     for(const id of ['tenant-a','tenant-b','tenant-c','tenant-d'])this.addTenant(id);
     this.sqlite.exec(readFileSync(new URL('0008_tenant_features.sql',migrationDir),'utf8'));
+    this.sqlite.exec(readFileSync(new URL('0014_multilingual.sql',migrationDir),'utf8'));
+    this.sqlite.exec(readFileSync(new URL('0015_portal_features.sql',migrationDir),'utf8'));
     this.addAccount('owner-a','tenant-a');this.addAccount('owner-b','tenant-b');
   }
   addTenant(id){this.sqlite.prepare('INSERT INTO tenants(id,name,core_json) VALUES(?,?,?)').run(id,'Kitchen '+id,'{"stores":[]}');}
@@ -140,7 +142,7 @@ test('unconfigured or disabled management gets inert status and cannot configure
   const status=await body(await h.handle('/api/flow/status'));
   assert.equal(status.enabled,false);assert.equal(status.available,false);assert.equal(status.managed,true);assert.equal(status.models,undefined);
   for(const actor of ['owner','member'])for(const [route,value] of [['/api/flow/provider',{model:'model-a'}],['/api/flow/auth/token',{token:tokenA}],['/api/flow/auth/start',{}],['/api/flow/auth/poll',{authId:'x'}],['/api/platform/flow/connection',{tenantId:'tenant-a',token:tokenA}],['/api/flow/chat',{message:'查询'}]])assert.equal((await h.handle(route,value,actor)).status,403);
-  for(const actor of ['platform','store','none'])assert.equal((await h.handle('/api/flow/status',undefined,actor)).status,actor==='none'?401:403);
+  for(const actor of ['platform','store','none'])assert.equal((await h.handle('/api/flow/status',undefined,actor)).status,actor==='none'?401:200);
   for(const origin of ['https://localhost:8787','http://example.com:8787'])assert.equal((await h.runtime.handle(new Request(origin+'/api/flow/status'))).status,403);
   assert.equal(await h.handle('/api/unrelated'),null);
   assert.equal(h.calls.fetch.length,0);assert.equal(h.calls.factory.length,0);assert.equal(h.calls.load.length,0);

@@ -1,3 +1,4 @@
+import {t, tx, ta, setI18nText} from "../i18n/index.js";
 const MAX_BYTES=200*1024;
 const MIME_TYPES=new Set(['image/png','image/jpeg','image/webp']);
 
@@ -16,13 +17,13 @@ export function createAvatarEditor(ctx) {
   const {request,modal,button,icon,escape:esc,closeOverlay,toast=()=>{},onSaved=()=>{}}=ctx;
   let state=null;
   const active=current=>!!current&&state===current&&current.form?.isConnected;
-  const imageMarkup=(image,name)=>image?`<img src="${esc(image)}" alt="${esc(name)}头像预览">`:`<span>${esc(String(name||'头像').slice(0,1))}</span>`;
+  const imageMarkup=(image,name)=>image?`<img src="${esc(image)}" ${ta("alt", "{0}头像预览", [esc(name)])}>`:`<span>${esc(String(name||'头像').slice(0,1))}</span>`;
   function dispose(){if(state){state.image=null;state.source=null;state.crop=null;}state=null;}
   function open(options) {
     const next={kind:options.kind==='organization'?'organization':'account',id:options.id,name:options.name||'头像',version:Number.isSafeInteger(options.avatarVersion)?options.avatarVersion:0,image:safeAvatarUrl(options.avatarUrl)||null,source:null,crop:null,busy:false,changed:false};
     if(!next.id)throw new Error('缺少头像所属账号，请刷新后重试。');
     const title=next.kind==='organization'?'厨房头像':'个人头像';
-    modal(title,`<div class="avatar-editor"><div class="avatar-editor-identity"><div class="avatar-editor-preview ${next.kind==='organization'?'is-organization':''}" id="avatar-preview">${imageMarkup(next.image,next.name)}</div><div><strong>${esc(next.name)}</strong><div class="avatar-editor-actions">${button(next.image?'更换图片':'上传图片','accounts-avatar-choose','secondary','type="button"')}${button('裁剪','accounts-avatar-recrop','ghost',`type="button" ${next.image?'':'hidden'}`)}${button('移除','accounts-avatar-remove','ghost',`type="button" ${next.image?'':'hidden'}`)}</div></div></div><input id="account-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><div class="avatar-crop" id="avatar-crop" hidden><canvas id="avatar-crop-canvas" width="320" height="320" tabindex="0" role="img" aria-label="正方形头像裁剪，可拖动或使用方向键调整"></canvas><div class="avatar-crop-controls"><label for="avatar-crop-zoom">缩放</label><input type="range" id="avatar-crop-zoom" min="1" max="3" step="0.01" value="1"><output id="avatar-crop-scale" for="avatar-crop-zoom">100%</output></div><div class="avatar-crop-actions">${button('取消裁剪','accounts-avatar-cancel-crop','secondary','type="button"')}${button('使用此裁剪','accounts-avatar-apply-crop','primary','type="button"')}</div></div><p class="form-hint">JPG、PNG 或 WebP，最大 5 MB。上传后裁剪为正方形。</p><p id="avatar-editor-error" class="accounts-form-error" role="alert"></p></div>`,button('取消','close','secondary','type="button"')+'<button type="submit" class="btn btn-primary" disabled>保存头像</button>','accounts-avatar-form');
+    modal(title,`<div class="avatar-editor"><div class="avatar-editor-identity"><div class="avatar-editor-preview ${next.kind==='organization'?'is-organization':''}" id="avatar-preview">${imageMarkup(next.image,next.name)}</div><div><strong>${esc(next.name)}</strong><div class="avatar-editor-actions">${button((next.image ? tx("更换图片") : tx("上传图片")),'accounts-avatar-choose','secondary','type="button"')}${button(tx("裁剪"),'accounts-avatar-recrop','ghost',`type="button" ${next.image?'':'hidden'}`)}${button(tx("移除"),'accounts-avatar-remove','ghost',`type="button" ${next.image?'':'hidden'}`)}</div></div></div><input id="account-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><div class="avatar-crop" id="avatar-crop" hidden><canvas id="avatar-crop-canvas" width="320" height="320" tabindex="0" role="img" ${ta("aria-label", "正方形头像裁剪，可拖动或使用方向键调整")}></canvas><div class="avatar-crop-controls"><label for="avatar-crop-zoom">${tx("缩放")}</label><input type="range" id="avatar-crop-zoom" min="1" max="3" step="0.01" value="1"><output id="avatar-crop-scale" for="avatar-crop-zoom">100%</output></div><div class="avatar-crop-actions">${button(tx("取消裁剪"),'accounts-avatar-cancel-crop','secondary','type="button"')}${button(tx("使用此裁剪"),'accounts-avatar-apply-crop','primary','type="button"')}</div></div><p class="form-hint">${tx("JPG、PNG 或 WebP，最大 5 MB。上传后裁剪为正方形。")}</p><p id="avatar-editor-error" class="accounts-form-error" role="alert"></p></div>`,button(tx("取消"),'close','secondary','type="button"')+`<button type="submit" class="btn btn-primary" disabled>${tx("保存头像")}</button>`,'accounts-avatar-form');
     state=next;next.form=document.getElementById('accounts-avatar-form');
     if(!next.form)return;
     next.form.closest('.modal')?.classList.add('accounts-avatar-modal');
@@ -40,8 +41,8 @@ export function createAvatarEditor(ctx) {
       const node=form.querySelector(`[data-action="accounts-avatar-${action}"]`);node.disabled=current.busy||cropping;
       if(action!=='choose')node.hidden=!current.image;
     }
-    form.querySelector('[data-action="accounts-avatar-choose"]').textContent=current.image?'更换图片':'上传图片';
-    const submit=form.querySelector('[type="submit"]');submit.disabled=current.busy||cropping||!current.changed;submit.textContent=current.busy?'保存中…':'保存头像';
+    setI18nText(form.querySelector('[data-action="accounts-avatar-choose"]'), () => (current.image ? t("更换图片") : t("上传图片")), "textContent");
+    const submit=form.querySelector('[type="submit"]');submit.disabled=current.busy||cropping||!current.changed;setI18nText(submit, () => (current.busy ? t("保存中…") : t("保存头像")), "textContent");
     form.setAttribute('aria-busy',String(current.busy));
   }
   async function selectFile(current,input) {

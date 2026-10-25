@@ -197,7 +197,8 @@ test('Flow renders untrusted model text as escaped content and only permits busi
   assert.doesNotMatch(html,/<img/);
   assert.match(html,/&lt;img/);
   assert.equal(safeFlowHref('/?page=orders&order=ORD-1'),'/?page=orders&order=ORD-1');
-  for(const url of ['javascript:alert(1)','https://example.com','//example.com/?page=orders','/?login=platform','/?page=orders&token=secret','/?page=team'])assert.equal(safeFlowHref(url),null);
+  assert.equal(safeFlowHref('/?page=team'),'/?page=team');
+  for(const url of ['javascript:alert(1)','https://example.com','//example.com/?page=orders','/?login=platform','/?page=orders&token=secret'])assert.equal(safeFlowHref(url),null);
 });
 
 test('portals without Flow have no DOM, launcher, listeners or service requests',t=>{
@@ -206,6 +207,24 @@ test('portals without Flow have no DOM, launcher, listeners or service requests'
   assert.equal(ui.launcher(),'');
   assert.equal(document.querySelector('#flow-root'),null);
   assert.deepEqual(requests,[]);
+});
+
+test('unconfigured platform owner can open Flow configuration; platform members cannot',async t=>{
+  let configured=0;
+  const owner=fixture(t,{portal:'platform',principal:{role:'platform',accountRole:'owner',userId:'owner'},canConfigure:true,onConfigure:()=>{configured++;},initialStatus:{enabled:false,configured:false},request:async()=>({enabled:false,configured:false})});
+  click(owner.document,'open');assert.equal(owner.document.querySelector('.flow-panel').hidden,false);
+  assert.ok(owner.document.querySelector('[data-flow-action="configure"]'));assert.equal(owner.document.querySelector('.flow-send').disabled,true);
+  assert.equal(owner.requests.filter(row=>row.path.startsWith('/conversations')).length,0);
+  click(owner.document,'configure');await settle(()=>configured===1);
+  const member=fixture(t,{portal:'platform',principal:{role:'platform',accountRole:'member',userId:'member'},canConfigure:true,initialStatus:{enabled:false,configured:false},request:async()=>({enabled:false,configured:false})});
+  assert.equal(member.document.querySelector('[data-flow-action="open"]').disabled,true);assert.equal(member.document.querySelector('[data-flow-action="configure"]'),null);
+});
+
+test('store Flow describes read-only capability and keeps the same chat interface',t=>{
+  const {document}=fixture(t,{portal:'store',principal:{role:'store',accountRole:'owner',tenantId:'tenant',storeId:'shop',userId:'owner'}});click(document,'open');
+  assert.equal(document.querySelector('.flow-compose-tools span').textContent,'可查询');
+  assert.match(document.querySelector('.flow-conversation').textContent,/我的哪些订单还未送达/);
+  assert.equal(document.querySelector('[data-flow-action="configure"]'),null);
 });
 
 test('Flow keeps its draft and conversation mount through application redraw and close/reopen',async t=>{

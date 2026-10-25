@@ -4,14 +4,14 @@ import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {JSDOM} from 'jsdom';
 import {cleanFlowMutation,cleanFlowProposal} from '../../backend/flow-content.js';
+import {flowStorageScope} from '../../backend/flow-scope.js';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const LIMIT=100;
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 const clip=(value,max=240)=>typeof value==='string'?value.slice(0,max):'';
 export function flowActorKey(principal) {
-  if(principal?.role!=='admin'||!principal.tenantId||!principal.userId||principal.storeId)fail('请先登录管理端。',403);
-  return createHash('sha256').update(JSON.stringify([principal.tenantId,principal.userId])).digest('hex');
+  return createHash('sha256').update(JSON.stringify(flowStorageScope(principal))).digest('hex');
 }
 export function safeFlowImage(value) {
   return typeof value==='string'&&(/^\/api\/flow\/artifacts\/[a-f0-9-]{36}$/.test(value)&&UUID.test(value.split('/').at(-1))||/^\/public\/product-images\/[1-9][0-9]?\.jpg$/.test(value))?value:null;
@@ -19,7 +19,7 @@ export function safeFlowImage(value) {
 const safeHref=value=>{
   if(typeof value!=='string'||!value.startsWith('/?'))return null;
   const u=new URL(value,'https://kuraflow.invalid');
-  if(!['overview','orders','catalogue','stores','documents','tasks'].includes(u.searchParams.get('page'))||[...u.searchParams.keys()].some(k=>!['page','order','store','product','tab','month','from','to','range','demo'].includes(k)))return null;
+  if(!['overview','orders','catalogue','stores','documents','tasks','products','my-orders','my-statements','account','kitchens','team'].includes(u.searchParams.get('page'))||[...u.searchParams.keys()].some(k=>!['page','order','store','product','tab','month','from','to','range','demo','tenant'].includes(k)))return null;
   return u.pathname+u.search;
 };
 function messages(input) {

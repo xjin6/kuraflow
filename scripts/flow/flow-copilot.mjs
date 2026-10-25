@@ -187,7 +187,7 @@ export function createFlowCopilot({ baseDirectory, privateDir, model, provider, 
           } catch (error) { emit({ type: 'tool-error', name: tool.name }); return { resultType: 'failure', textResultForLlm: JSON.stringify(flowToolFailure(error)) }; }
         } }));
       session = await c.createSession({ ...baseSession(), model: selectedModel, workingDirectory: workspaceDirectory,
-        systemMessage: { mode: 'replace', content: FLOW_SYSTEM_PROMPT + (systemPrompt ? '\n\n' + String(systemPrompt).slice(0, 20000) : '') },
+        systemMessage: { mode: 'replace', content: systemPrompt ? String(systemPrompt).slice(0, 20000) : FLOW_SYSTEM_PROMPT },
         streaming: true, availableTools: [...allowed].map(name => `custom:${name}`), tools: definitions,
         onPermissionRequest: request => request.kind === 'custom-tool' && allowed.has(request.toolName) && !request.managedApprovalRequired ? { kind: 'approve-once' } : deny(),
       });

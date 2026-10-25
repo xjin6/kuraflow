@@ -13,8 +13,8 @@ export function safeFlowImage(value) {
 function safeHref(value) {
   if(typeof value!=='string'||!value.startsWith('/?'))return null;
   let url;try {url=new URL(value,'https://kuraflow.invalid');}catch{return null;}
-  if(!['overview','orders','catalogue','stores','documents','tasks'].includes(url.searchParams.get('page')) ||
-    [...url.searchParams.keys()].some(key=>!['page','order','store','product','tab','month','from','to','range','demo'].includes(key)))return null;
+  if(!['overview','orders','catalogue','stores','documents','tasks','products','my-orders','my-statements','account','kitchens','team'].includes(url.searchParams.get('page')) ||
+    [...url.searchParams.keys()].some(key=>!['page','order','store','product','tab','month','from','to','range','demo','tenant'].includes(key)))return null;
   return url.pathname+url.search;
 }
 export function cleanFlowMutation(row) {

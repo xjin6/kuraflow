@@ -73,6 +73,68 @@ async function addMember(cookie, options = {}) {
   return {...result, body};
 }
 
+test('platform owner creates unlimited platform members without changing its key or tenant scope',async()=>{
+  const before=await env.DB.prepare('SELECT key_hash FROM account_keys WHERE account_id=?').bind(platformCredential.account.id).first();
+  const members=await Promise.all(Array.from({length:4},(_,index)=>addMember(platform,{username:`platform-staff-${counter}-${index}`,role:'store',accountRole:'owner'})));
+  const team=expectStatus(await call('/api/team/list',undefined,platform),200).data;
+  assert.equal(team.scope,'platform');assert.equal(team.canManage,true);assert.equal(team.limit,null);assert.equal(team.canRotateMaster,false);
+  for(const {account,body} of members){
+    assert.equal(account.role,'platform');assert.equal(account.accountRole,'member');assert.equal(account.tenantId,null);assert.equal(account.storeId,null);
+    assert.ok(team.accounts.some(row=>row.id===account.id));
+    assert.equal(expectStatus(await call('/api/team/create',body,platform),201).data.account.id,account.id);
+  }
+  const memberCookie=await loginMember(members[0].account.username,'platform');
+  assert.equal(expectStatus(await call('/api/accounts/session',undefined,memberCookie),200).data.principal.role,'platform');
+  assert.equal(expectStatus(await call('/api/team/list',undefined,memberCookie),200).data.canManage,false);
+  expectStatus(await call('/api/accounts/login',{username:members[0].account.username,password,portal:'kitchen'}),401);
+  expectStatus(await call('/api/team/create',{username:'platform-escalation',password},memberCookie),403);
+  expectStatus(await call('/api/team/master-key',{},platform),403);
+  expectStatus(await call('/api/team/master-key',{},memberCookie),403);
+  expectStatus(await call('/api/platform/upgrade-existing',{},memberCookie),403);
+  expectStatus(await call('/api/team/audit',undefined,memberCookie),403);
+  assert.deepEqual(await env.DB.prepare('SELECT key_hash FROM account_keys WHERE account_id=?').bind(platformCredential.account.id).first(),before);
+  assert.doesNotMatch(JSON.stringify(team),/password_hash|key_hash|key_cipher/);
+});
+
+test('platform members read customer directories but cannot manage credentials or other staff',async()=>{
+  const kitchen=await kitchenFixture('平台员工查看客户'),first=await addMember(platform),second=await addMember(platform);
+  const memberCookie=await loginMember(first.account.username,'platform');
+  expectStatus(await call('/api/platform/kitchens',undefined,memberCookie),200);
+  expectStatus(await call('/api/platform/customer?tenant='+kitchen.tenantId,undefined,memberCookie),200);
+  expectStatus(await call('/api/team/list?tenant='+kitchen.tenantId,undefined,memberCookie),200);
+  expectStatus(await call('/api/platform/create',{name:'禁止创建',ownerName:'负责人'},memberCookie),403);
+  expectStatus(await call('/api/platform/update',{tenantId:kitchen.tenantId,active:false},memberCookie),403);
+  expectStatus(await call('/api/team/master-key',{tenantId:kitchen.tenantId},memberCookie),403);
+  expectStatus(await call('/api/team/update',{accountId:second.account.id,action:'disable'},memberCookie),403);
+  expectStatus(await call('/api/team/delete',{accountId:second.account.id,version:0},memberCookie),403);
+  expectStatus(await call('/api/team/delete',{accountId:platformCredential.account.id,version:0},platform),403);
+  expectStatus(await call('/api/team/update',{accountId:first.account.id,action:'disable'},kitchen.cookie),403);
+});
+
+test('platform staff profile changes, disable, archive and restore revoke sessions with version checks',async()=>{
+  const member=await addMember(platform);let memberCookie=await loginMember(member.account.username,'platform');
+  const nextUsername=member.account.username+'-new',nextPassword=password+' changed';
+  expectStatus(await call('/api/accounts/profile',{username:nextUsername,name:'平台员工新姓名',contact:'staff@example.test',oldPassword:password,password:nextPassword,accountRole:'owner',role:'admin'},memberCookie),200);
+  assert.equal(await authenticated(memberCookie),false);
+  memberCookie=await loginMember(nextUsername,'platform',nextPassword);
+  const identity=expectStatus(await call('/api/accounts/session',undefined,memberCookie),200).data.principal;
+  assert.equal(identity.name,'平台员工新姓名');assert.equal(identity.contact,'staff@example.test');assert.equal(identity.accountRole,'member');assert.equal(identity.tenantId,null);
+  expectStatus(await call('/api/team/update',{accountId:member.account.id,version:0,action:'disable'},platform),409);
+  expectStatus(await call('/api/team/update',{accountId:member.account.id,version:1,action:'disable'},platform),200);
+  assert.equal(await authenticated(memberCookie),false);
+  expectStatus(await call('/api/team/update',{accountId:member.account.id,version:2,action:'enable'},platform),200);
+  memberCookie=await loginMember(nextUsername,'platform',nextPassword);
+  const archived=expectStatus(await call('/api/team/delete',{accountId:member.account.id,version:3},platform),200).data.account;
+  assert.ok(archived.deletedAt);assert.equal(archived.version,4);assert.equal(await authenticated(memberCookie),false);
+  expectStatus(await call('/api/accounts/login',{username:nextUsername,password:nextPassword,portal:'platform'}),401);
+  expectStatus(await call('/api/team/restore',{accountId:member.account.id,version:3},platform),409);
+  const restored=expectStatus(await call('/api/team/restore',{accountId:member.account.id,version:4},platform),200).data.account;
+  assert.equal(restored.deletedAt,null);assert.equal(restored.status,'disabled');
+  expectStatus(await call('/api/accounts/login',{username:nextUsername,password:nextPassword,portal:'platform'}),401);
+  expectStatus(await call('/api/team/update',{accountId:member.account.id,version:5,action:'enable'},platform),200);
+  assert.equal(await authenticated(await loginMember(nextUsername,'platform',nextPassword)),true);
+});
+
 test('platform uses only its secret key and does not expose or store a recoverable key or password', async () => {
   const login = expectStatus(await call('/api/accounts/platform-login', {key:platformCredential.platformKey}), 200);
   assert.equal(login.data.principal.role, 'platform');

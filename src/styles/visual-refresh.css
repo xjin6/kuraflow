@@ -389,6 +389,7 @@ body { font-family:var(--font-ui); background:var(--bg); }
 .sidebar .workspace-copy strong { color:#c6d0d9; font-weight:450; }
 .sidebar .sidebar-label { color:#80909e; font-size:10px; font-weight:500; letter-spacing:.08em; }
 .sidebar .nav-list { gap:6px; }
+.sidebar .brand + .nav-list.without-section-label { margin-top:28px; }
 .sidebar .nav-item { position:relative; color:#a8b6c3; border-radius:4px; background:transparent; min-height:42px; transition:color 160ms,background-color 160ms; }
 .sidebar .nav-item .nav-icon { color:#8093a4; }
 .sidebar .nav-item.active { color:#fff; background:transparent; box-shadow:none; font-weight:550; }

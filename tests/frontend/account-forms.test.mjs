@@ -63,8 +63,10 @@ async function fixture(t, {entry = 0, url = 'https://accounts.example.test/?logi
     assert.deepEqual(errors, [], 'the DOM must not raise an exception or attempt native navigation');
   });
   const {window} = dom;
-  window.__KURAFLOW_ACCOUNT_PRINCIPAL__ = {role: 'platform', displayName: '测试平台负责人'};
+  window.__KURAFLOW_ACCOUNT_PRINCIPAL__ = {role:'platform',accountRole:'owner',tenantId:null,storeId:null,displayName:'测试平台负责人'};
   window.fetch = async (path, options = {}) => {
+    if(String(path)==='/api/flow/status')return jsonResponse({enabled:false,available:false});
+    if(String(path).startsWith('/api/notifications?'))return jsonResponse({items:[],unreadCount:0,latestId:0,hasMore:false});
     const call = {
       path: String(path), method: options.method || 'GET',
       body: options.body === undefined ? undefined : JSON.parse(options.body), options,
@@ -292,7 +294,7 @@ test('administrator creation and editing use accountId and keep the selected org
     && document.querySelector('.accounts-seat'), 'administrator edit did not finish refreshing the team');
 });
 
-test('platform login exposes only a complex key field and posts it to the platform endpoint', async t => {
+test('platform owner login keeps a private key field and posts it to the platform endpoint', async t => {
   const {window, document, calls} = await fixture(t, {
     entry: 1,
     route: call => {
@@ -302,7 +304,8 @@ test('platform login exposes only a complex key field and posts it to the platfo
     },
   });
   assert.equal(document.querySelector('h1').textContent, '平台登录');
-  assert.equal(document.querySelector('[role="tablist"]'), null);
+  assert.equal(document.querySelectorAll('[data-login-tab]').length,2);
+  assert.equal(document.querySelector('[data-login-tab="owner"]').getAttribute('aria-selected'),'true');
   assert.deepEqual([...document.querySelectorAll('.accounts-login-links a')].map(a => a.search),
     ['?login=kitchen', '?login=store']);
   assert.deepEqual([...document.querySelectorAll('.accounts-login-links a')].map(a => a.textContent),
@@ -320,6 +323,48 @@ test('platform login exposes only a complex key field and posts it to the platfo
   assert.deepEqual(write.body, {key, portal: 'platform'});
   assert.equal(document.getElementById('login-key').value, '', 'a rejected platform key is not rendered back into the document');
   assert.equal(window.location.search, '?login=platform');
+});
+
+test('platform administrator login uses the shared credential form and platform role endpoint',async t=>{
+  const {window,document,calls}=await fixture(t,{entry:1,url:'https://accounts.example.test/?login=platform&tab=admin',route:call=>{
+    if(call.path==='/api/accounts/session')return jsonResponse({authenticated:false});
+    if(call.path==='/api/accounts/login')return jsonResponse({error:'测试登录未通过'},401);
+    throw Error(call.path);
+  }});
+  assert.equal(document.querySelector('[data-login-tab="admin"]').getAttribute('aria-selected'),'true');
+  assert.equal(document.getElementById('login-key'),null);
+  let form=document.getElementById('account-login');
+  fill(form,{username:'test_platform_member',password:'Synthetic member password'});submit(window,form);
+  await until(()=>document.querySelector('.cloud-login-error').textContent,'error must be displayed');
+  assert.deepEqual(calls.find(call=>call.path==='/api/accounts/login').body,{username:'test_platform_member',password:'Synthetic member password',portal:'platform'});
+  assert.equal(document.getElementById('login-username').value,'test_platform_member');
+  assert.equal(document.getElementById('login-password').value,'');
+  click(document,'[data-login-tab="owner"]');form=document.getElementById('account-login');
+  assert.deepEqual([...form.querySelectorAll('input')].map(input=>input.name),['key']);
+});
+
+test('platform own team stays outside customer scope and uses shared owner/member controls',async t=>{
+  const dom=new JSDOM('<main></main>');t.after(()=>dom.window.close());
+  const container=dom.window.document.querySelector('main'),calls=[];
+  for(const accountRole of ['owner','member']){
+    const current={role:'platform',accountRole,tenantId:null,storeId:null,userId:accountRole==='owner'?'platform-owner':'platform-member',name:'平台人员'};
+    let ui;
+    ui=createAccountsUI({principal:current,escape:String,icon:()=>'',button:(label,action,_type,extra='')=>`<button data-action="${action}" ${extra}>${label}</button>`,modal:()=>{},closeOverlay:()=>{},toast:()=>{},render:()=>container.innerHTML=ui.page(),request:async path=>{
+      calls.push(path);assert.equal(path,'/api/team/list?');
+      return {scope:'platform',organization:null,stores:[],canManage:accountRole==='owner',limit:null,accounts:[{id:'platform-owner',role:'platform',accountRole:'owner',name:'平台负责人',status:'active'},{id:'platform-member',role:'platform',accountRole:'member',name:'平台员工',username:'platform-member',status:'active'}]};
+    }});
+    ui.openPlatformTeam();await until(()=>container.querySelector('tbody'),'platform own team loads');
+    assert.equal(container.querySelector('h1').textContent,'员工管理');
+    assert.equal(container.querySelector('#accounts-tenant'),null);assert.equal(container.querySelector('#accounts-store'),null);
+    assert.equal(container.querySelector('[data-action="accounts-scope-key"]'),null);
+    assert.match(container.querySelector('tbody').textContent,/平台密钥登录/);
+    assert.equal(!!container.querySelector('[data-action="accounts-staff-new"]'),accountRole==='owner');
+    assert.equal(!!container.querySelector('[data-action="accounts-staff-delete"]'),accountRole==='owner');
+    assert.ok(container.querySelector(`[data-action="accounts-person-avatar"][data-id="${current.userId}"]`));
+    if(accountRole==='member')assert.ok(container.querySelector('[data-action="accounts-profile"]'));
+    container.innerHTML='';
+  }
+  assert.equal(calls.length,2);
 });
 
 for (const portal of ['kitchen', 'store']) {

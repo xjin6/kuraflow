@@ -1,5 +1,5 @@
 import {handleFlow} from './flow-service.js';
-import {handlePlatformFlow} from './flow-control.js';
+import {handlePlatformFlow,getUIFeatures} from './flow-control.js';
 import {handleAccounts,getIdentity,getStoreMasterCode,ensureMaster} from './accounts.js';
 import { getState, getOrderHistory, executeCommand, getPrivateMaterials } from './repository.js';
 import { getDocumentProfile, saveDocumentProfile } from './document-profile.js';
@@ -80,12 +80,17 @@ export default {
       if (path.startsWith('/api/auth/')) return json({error:'请使用新的登录入口。'},410);
       // Read markers and their identity check share a session beginning at the
       // primary, so suspended accounts and recent events are not read stale.
-      const notificationRoute = path === '/api/notifications' || path === '/api/notifications/read';
+      const notificationRoute = path === '/api/notifications' || path === '/api/notifications/read' || path === '/api/ui-features';
       const requestEnv = notificationRoute && env.DB.withSession ? { ...env, DB: env.DB.withSession('first-primary') } : env;
       const principal = await getIdentity(request,requestEnv);
       if (!principal) return json({error:'请先登录。'},401);
-      if (principal.role==='platform') return json({error:'平台账号请使用客户管理入口。'},403);
+      if (request.method === 'GET' && path === '/api/ui-features') return json(await getUIFeatures(requestEnv.DB,principal));
       if (request.method === 'GET' && path === '/api/notifications') return json(await listNotifications(requestEnv.DB,principal,new URL(request.url).searchParams));
+      if (request.method === 'POST' && path === '/api/notifications/read') {
+        mutationOrigin(request,env);
+        return json(await markNotificationsRead(requestEnv.DB,principal,await readJSON(request,8192)));
+      }
+      if (principal.role==='platform') return json({error:'平台账号请使用客户管理入口。'},403);
       if (request.method === 'GET' && path === '/api/state') return json({...await getState(env.DB,principal),principal});
       if (request.method === 'GET' && path === '/api/document-profile') return json(await getDocumentProfile(env.DB,principal));
       if (request.method === 'GET' && path === '/api/order-history') {
@@ -105,7 +110,6 @@ export default {
       }
       if (request.method !== 'POST') return json({error:'Not found'},404);
       mutationOrigin(request,env);
-      if (path === '/api/notifications/read') return json(await markNotificationsRead(requestEnv.DB,principal,await readJSON(request,8192)));
       if (path === '/api/document-profile') return json(await saveDocumentProfile(env.DB,principal,await readJSON(request,8192)));
       if (path === '/api/images') return await uploadImage(request,env,principal);
       if (path === '/api/commands') {

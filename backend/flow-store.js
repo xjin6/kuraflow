@@ -1,5 +1,6 @@
 import {cleanAttachmentRefs} from '../src/shared/flow-attachment-data.js';
 import {cleanFlowMessages,sanitizeFlowSVG} from './flow-content.js';
+import {flowStorageScope,flowConnectionScope} from './flow-scope.js';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const LIMIT=100;
@@ -17,9 +18,8 @@ function catalogueData(value) {
   return {models:[...models.values()]};
 }
 function actor(principal,owner=false) {
-  if(principal?.role!=='admin'||principal.storeId||typeof principal.tenantId!=='string'||!principal.tenantId||typeof principal.userId!=='string'||!principal.userId)fail('请先登录管理端。',403);
-  if(owner&&principal.accountRole!=='owner')fail('请由负责人设置模型连接。',403);
-  return [principal.tenantId,principal.userId];
+  if(owner)flowConnectionScope(principal,true);
+  return flowStorageScope(principal);
 }
 function checkedId(id) {if(typeof id!=='string'||!UUID.test(id))fail('未找到该记录。',404);return id;}
 const changed=result=>Number(result?.meta?.changes||0)>0;
@@ -71,12 +71,12 @@ export function createFlowStore(env,{now=Date.now}={}) {
     } catch {fail('Flow 连接资料无法读取，请重新连接。',503);}
   }
   async function getConnection(principal) {
-    const [tenantId]=actor(principal);
+    const tenantId=flowConnectionScope(principal);
     const row=await db.prepare('SELECT data_cipher,version FROM flow_connections WHERE tenant_id=?').bind(tenantId).first();
     return row?{data:await decrypt('connection',[tenantId],row.data_cipher),version:row.version}:null;
   }
   async function saveConnection(principal,data,expectedVersion=null) {
-    const [tenantId]=actor(principal,true),cipher=await encrypt('connection',[tenantId],data),updatedAt=new Date(now()).toISOString();
+    const tenantId=flowConnectionScope(principal,true),cipher=await encrypt('connection',[tenantId],data),updatedAt=new Date(now()).toISOString();
     const result=expectedVersion===null
       ?await db.prepare('INSERT INTO flow_connections(tenant_id,data_cipher,version,updated_at) VALUES(?,?,1,?) ON CONFLICT(tenant_id) DO NOTHING').bind(tenantId,cipher,updatedAt).run()
       :await db.prepare('UPDATE flow_connections SET data_cipher=?,version=version+1,updated_at=? WHERE tenant_id=? AND version=?').bind(cipher,updatedAt,tenantId,version(expectedVersion)).run();
@@ -84,7 +84,7 @@ export function createFlowStore(env,{now=Date.now}={}) {
     return {data,version:expectedVersion===null?1:expectedVersion+1};
   }
   async function getModelCatalogue(principal,connectionVersion) {
-    const [tenantId]=actor(principal);
+    const tenantId=flowConnectionScope(principal);
     // A lookup may follow slow upstream I/O. Start at primary again so a
     // concurrently replaced token cannot reuse this request's older bookmark.
     const latest=env.DB.withSession?env.DB.withSession('first-primary'):db;
@@ -93,7 +93,7 @@ export function createFlowStore(env,{now=Date.now}={}) {
     try{return {...catalogueData(JSON.parse(row.data_json)),fetchedAt:row.fetched_at};}catch{return null;}
   }
   async function saveModelCatalogue(principal,connectionVersion,snapshot) {
-    const [tenantId]=actor(principal),connection=version(connectionVersion),data=JSON.stringify(catalogueData(snapshot));
+    const tenantId=flowConnectionScope(principal),connection=version(connectionVersion),data=JSON.stringify(catalogueData(snapshot));
     if(!Number.isSafeInteger(snapshot.fetchedAt)||snapshot.fetchedAt<0||snapshot.fetchedAt>now()+30000)fail('模型目录时间无效。');
     // The INSERT and its current-connection check are one statement: a slow
     // response cannot restore a catalogue from a replaced GitHub connection.
@@ -101,7 +101,7 @@ export function createFlowStore(env,{now=Date.now}={}) {
     return changed(result);
   }
   async function deleteModelCatalogue(principal,connectionVersion) {
-    const [tenantId]=actor(principal);
+    const tenantId=flowConnectionScope(principal);
     const result=await db.prepare('DELETE FROM flow_model_catalogues WHERE tenant_id=? AND connection_version=?').bind(tenantId,version(connectionVersion)).run();
     return changed(result);
   }
