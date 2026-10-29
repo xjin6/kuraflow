@@ -19,10 +19,10 @@ async function until(condition,label='the UI did not settle'){
   assert.fail(label);
 }
 function click(document,selector){const node=document.querySelector(selector);assert.ok(node,selector);node.click();return node;}
-async function fixture(t,{platform=false,url='https://profile.example.test/?page=overview',person=principal()}={}){
+async function fixture(t,{platform=false,url='https://profile.example.test/?page=overview',person=principal(),initialState=null}={}){
   const errors=[],calls=[],console=new VirtualConsole();console.on('jsdomError',error=>errors.push(error));
   const dom=new JSDOM('<!doctype html><div id="app"></div><div id="overlay-root"></div><div id="toast-container"></div>',{url,runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:console});
-  const {window}=dom,state=makeState();
+  const {window}=dom,state=initialState||makeState();
   window.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){}});
   window.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
   window.scrollTo=()=>{};window.HTMLElement.prototype.scrollIntoView=()=>{};
@@ -84,6 +84,37 @@ test('ordinary management members keep their personal entry without store staff 
   assert.equal(document.querySelector('[data-action="organization-avatar"]'),null);
   assert.ok(document.querySelector('.sidebar-footer button[data-action="open-own-team"]'));
   assert.equal(document.querySelector('.topbar button[data-action="open-own-team"]'), null);
+});
+
+test('store cart retains draft fields and hides the floating shortcut only while its full panel is visible',async t=>{
+  const state=makeState();state.products=[{id:'p1',name:'带有长规格名称的订货商品',unit:'袋',category:'冷冻品',stockUnlimited:true}];state.prices={'store-a':{p1:1280}};state.cart={p1:2};state.cartNote='请联系收货人';state.cartDeliveryDate='2026-11-02';
+  const person=principal({role:'store',storeId:'store-a'}),{window,document}=await fixture(t,{url:'https://profile.example.test/?view=client',person,initialState:state});
+  const panel=document.querySelector('.cart-panel'),shortcut=document.querySelector('.mobile-cart-bar');assert.ok(panel);assert.ok(shortcut);
+  assert.equal(panel.querySelector('#order-note').value,'请联系收货人');assert.equal(panel.querySelector('#delivery-date').value,'2026-11-02');
+  assert.equal(panel.querySelector('.cart-line-amount').textContent,'￥2,560');assert.ok(panel.querySelector('.cart-submit'));assert.equal(panel.querySelector('.cart-hint'),null);
+  panel.getBoundingClientRect=()=>({top:80,bottom:640,height:560});document.querySelector('.topbar').getBoundingClientRect=()=>({bottom:52,height:52});
+  window.dispatchEvent(new window.Event('scroll'));await new Promise(resolve=>window.requestAnimationFrame(resolve));assert.equal(shortcut.hidden,true);
+  panel.getBoundingClientRect=()=>({top:1500,bottom:2060,height:560});window.dispatchEvent(new window.Event('scroll'));await new Promise(resolve=>window.requestAnimationFrame(resolve));assert.equal(shortcut.hidden,false);
+  assert.equal(panel.querySelector('#order-note').value,'请联系收货人');assert.equal(panel.querySelectorAll('[data-action="remove-cart"]').length,1);
+});
+
+test('store orders deep link defaults to the complete daily group and keeps header controls stable when switching views',async t=>{
+  const state=makeState();state.products=[{id:'p1',name:'牛骨',unit:'KG',spec:'15KG/箱'}];
+  const row=(id,storeId,qty)=>({id,storeId,deliveryDate:'2026-10-30',submittedAt:'2026-10-29T01:00:00Z',stage:'pending',items:[{productId:'p1',productName:'牛骨',unit:'KG',qty,price:200,taxBasis:'exclusive',taxRate:.08}]});
+  state.orders=[row('a','store-a',2),row('b','store-a',3),row('other','other-store',100)];
+  const {document,window}=await fixture(t,{url:'https://profile.example.test/?login=store&page=my-orders',person:principal({role:'store',storeId:'store-a'}),initialState:state});
+  await until(()=>document.querySelector('.daily-order-card'));
+  assert.equal(document.querySelector('h1').textContent,'我的订单');assert.equal(document.querySelectorAll('.daily-order-card').length,1);
+  assert.match(document.querySelector('.daily-product-qty').textContent,/5\s+KG/);
+  const action=document.querySelector('[data-action="client-products"]').outerHTML;
+  click(document,'[data-action="order-view"][data-view="individual"]');
+  await until(()=>document.querySelector('.order-cards'));
+  assert.equal(document.querySelectorAll('.order-cards > .order-card').length,2);
+  assert.equal(document.querySelector('[data-action="client-products"]').outerHTML,action);
+  assert.equal(new URL(window.location.href).searchParams.get('orderView'),'individual');
+  click(document,'[data-action="order-view"][data-view="daily"]');
+  await until(()=>document.querySelector('.daily-order-card'));
+  assert.equal(document.querySelector('[data-action="client-products"]').outerHTML,action);
 });
 
 test('platform retains customer employee support and its footer opens platform staff with avatar editing',async t=>{

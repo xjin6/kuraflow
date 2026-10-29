@@ -606,8 +606,9 @@ test('store catalogue excludes unpriced items and other-store prices while retai
   await executeCommand(db, admin, command('setSaleUnits', [pid, [{unit:'袋',perBase:2},{unit:'KG',perBase:15}]]));
   const pricedUnit = (await getState(db, store)).state;
   client.state = pricedUnit; client.normalizeStoreCart('store-a');
-  assert.equal(client.getCartUnit(pid), 'KG');
-  assert.deepEqual(client.getQuotedSaleUnits('store-a', pid).map(u => u.unit), ['KG']);
+  assert.equal(client.getCartUnit(pid), '袋');
+  assert.deepEqual(client.getQuotedSaleUnits('store-a', pid).map(u => u.unit), ['袋','KG']);
+  assert.equal(client.getUnitQuote('store-a',pid,'袋').price,client.getUnitQuote('store-a',pid,'KG').price * 15 / 2);
   assert.equal(pricedUnit.unitQuotes['store-a'][pid].KG.source, null);
   assert.equal(pricedUnit.unitQuotes['store-a'][pid].KG.kind, 'listed');
 });

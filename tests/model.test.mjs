@@ -509,7 +509,7 @@ try {
     const p=m.addProduct({name:'多单位测试',category:'冷冻品',unit:'箱',spec:'15KG/箱',basePrice:1500,stock:10});
     m.setSaleUnits(p.id,[{unit:'箱',perBase:1},{unit:'KG',perBase:15}]);
     m.setUnitQuote(sid,p.id,'KG',120,'exclusive',0.08);
-    assert.equal(m.getUnitQuote(other,p.id,'KG').price,null);
+    assert.equal(m.getUnitQuote(other,p.id,'KG').price,100);
     assert.equal(m.getUnitQuote(sid,p.id,'箱').price,1500);
     m.setStoreUnitAllocation(sid,p.id,'KG',30);
     assert.equal(m.getAllocation(sid,p.id),2);
@@ -886,11 +886,11 @@ try {
     const { model, storeId, count, unquoted } = setup();
     model.setSaleUnits(unquoted.id, [{unit:'盒', perBase:1}, {unit:'袋', perBase:2}]);
     model.setUnitQuote(storeId, unquoted.id, '袋', 80);
-    assert.deepEqual(model.getQuotedSaleUnits(storeId, unquoted.id).map(u => u.unit), ['袋']);
+    assert.deepEqual(model.getQuotedSaleUnits(storeId, unquoted.id).map(u => u.unit), ['盒','袋']);
     model.state.cart = {[unquoted.id]:3, [count.id]:2};
     model.normalizeStoreCart(storeId);
-    assert.equal(model.getCartUnit(unquoted.id), '袋');
-    assert.equal(model.state.cart[unquoted.id], undefined);
+    assert.equal(model.getCartUnit(unquoted.id), '盒');
+    assert.equal(model.state.cart[unquoted.id], 3);
     assert.equal(model.state.cart[count.id], 2);
     model.state.cart[unquoted.id] = 4;
     delete model.state.unitQuotes[storeId][unquoted.id];

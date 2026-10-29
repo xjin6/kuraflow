@@ -2,6 +2,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 export const projectRoot=path.resolve(fileURLToPath(new URL('../../',import.meta.url)));
 export const browserSources={
+  "daily-orders.js": "src/shared/daily-orders.js",
+  "daily-orders-ui.js": "src/features/orders/daily-orders-ui.js",
   "topbar-tools.js": "src/ui/topbar-tools.js",
   "portal-feature-fields.js": "src/features/accounts/portal-feature-fields.js",
   "app.js": "src/app/app.js",
@@ -27,6 +29,7 @@ export const browserSources={
   "portal-icon.js": "src/ui/portal-icon.js",
   "sidebar-brand.js": "src/ui/sidebar-brand.js",
   "data.js": "src/shared/data.js",
+  "unit-pricing.js": "src/shared/unit-pricing.js",
   "business-data.js": "src/shared/business-data.js",
   "cloud-seed.js": "src/shared/cloud-seed.js",
   "notification-domain.js": "src/shared/notification-domain.js",
@@ -36,6 +39,8 @@ export const browserSources={
   "japan-addresses.js": "src/shared/japan-addresses.js"
 };
 export const styleSources={
+  "daily-orders.css": "src/styles/daily-orders.css",
+  "client-ordering.css": "src/styles/client-ordering.css",
   "i18n.css": "src/styles/i18n.css",
   "pricing-ui.css": "src/styles/pricing-ui.css",
   "settlement.css": "src/styles/settlement.css",

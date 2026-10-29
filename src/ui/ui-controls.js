@@ -50,10 +50,13 @@ export function initSelectControls() {
     const gap = 6, margin = 12;
     const availableBelow = topEdge + height - rect.bottom - gap - margin;
     const availableAbove = rect.top - topEdge - gap - margin;
-    const desired = Math.min(320, control.list.scrollHeight + (control.search ? 54 : 0) + 12);
+    const compact = control.select.closest('.sale-unit-picker');
+    const heightLimit = compact ? 224 : 320;
+    const desired = Math.min(heightLimit, control.list.scrollHeight + (control.search ? 54 : 0) + (compact ? 8 : 12));
     const above = availableBelow < Math.min(desired, 180) && availableAbove > availableBelow;
-    const maxHeight = Math.max(64, Math.min(320, above ? availableAbove : availableBelow));
-    const menuWidth = Math.min(Math.max(rect.width, 180), width - margin * 2);
+    const maxHeight = Math.max(64, Math.min(heightLimit, above ? availableAbove : availableBelow));
+    const naturalWidth = compact ? Math.min(160, Math.max(rect.width, 80, control.list.scrollWidth + 8)) : Math.max(rect.width, 180);
+    const menuWidth = Math.min(naturalWidth, width - margin * 2);
     Object.assign(control.menu.style, {
       width: `${menuWidth}px`, maxHeight: `${maxHeight}px`,
       left: `${Math.max(leftEdge + margin, Math.min(rect.left, leftEdge + width - menuWidth - margin))}px`,
@@ -112,6 +115,7 @@ export function initSelectControls() {
     close();
     opened = control;
     const menu = document.createElement('div'); menu.className = 'ui-select-menu';
+    if (control.select.closest('.sale-unit-picker')) menu.classList.add('ui-select-menu-unit');
     const list = document.createElement('div'); list.className = 'ui-select-options'; list.id = `${control.uid}-list`;
     list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', control.label);
     control.menu = menu; control.list = list; control.search = null;

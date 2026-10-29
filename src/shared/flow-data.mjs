@@ -1,5 +1,6 @@
 /** Local Flow preview: allowlisted, tenant-scoped business observations only. */
 import { savedAmount, deliveryDay, validDay } from './overview-data.js';
+import { KitchenModel } from './data.js';
 
 const PAGE_SIZE = 250;
 const MAX_RECORDS = 50000;
@@ -81,6 +82,7 @@ function citation(kind, id, label, extra = {}) {
 }
 
 function indexSnapshot(snapshot) {
+  const model = Object.assign(Object.create(KitchenModel.prototype), {state:snapshot.state});
   const state = snapshot.state || {}, records = [];
   const stores = new Map((state.stores || []).map(row => [row.id, row]));
   const products = new Map((state.products || []).map(row => [row.id, row]));
@@ -120,10 +122,10 @@ function indexSnapshot(snapshot) {
   }, { storeId: document.storeId });
   for (const store of stores.values()) for (const product of products.values()) {
     const quotes = new Map();
-    const plan=state.quotePlans?.find(p=>p.id===store.quotePlanId);
-    const base = plan?plan.quotes?.[product.id]?.[product.unit]?.price:state.prices?.[store.id]?.[product.id], meta = plan?plan.quotes?.[product.id]?.[product.unit]:state.quoteMeta?.[store.id]?.[product.id];
-    if (base != null || meta) quotes.set(product.unit, quoteFields({ ...meta, price: base }));
-    for (const [unit, row] of Object.entries((plan?plan.quotes?.[product.id]:state.unitQuotes?.[store.id]?.[product.id]) || {})) quotes.set(unit, quoteFields(row));
+    for (const {unit} of model.getSaleUnits(product.id)) {
+      const resolved = model.getUnitQuote(store.id, product.id, unit);
+      if (resolved.price !== null) quotes.set(unit, quoteFields(resolved));
+    }
     for (const [unit, quote] of quotes) {
       const id = `${store.id}|${product.id}|${unit}`;
       add('quote', id, `${store.name} · ${product.name} · ${unit}`, { storeId: store.id, storeName: store.name, productId: product.id, productName: product.name, unit, ...quote,
@@ -195,10 +197,10 @@ export function createFlowDataTools({ db, principal, loadSnapshot } = {}) {
       if(args.storeId&&!stores.length)fail('未找到该门店。','FLOW_RECORD_NOT_FOUND',404);
       const all=[];
       if(mode==='missing_price'){
+        const model = Object.assign(Object.create(KitchenModel.prototype), {state:snapshot.state});
         for(const store of stores)for(const product of products){
           const raw=snapshot.state.products.find(p=>p.id===product.id),units=raw.saleUnits?.length?raw.saleUnits:[{unit:raw.unit}];
-          const sourceStore=snapshot.state.stores.find(s=>s.id===store.id),plan=snapshot.state.quotePlans?.find(p=>p.id===sourceStore?.quotePlanId);
-          const missing=units.filter(row=>number(plan?plan.quotes?.[product.id]?.[row.unit]?.price:row.unit===raw.unit?snapshot.state.prices?.[store.id]?.[product.id]:snapshot.state.unitQuotes?.[store.id]?.[product.id]?.[row.unit]?.price)===null).map(row=>row.unit);
+          const missing=units.filter(row=>model.getUnitQuote(store.id,product.id,row.unit).price===null).map(row=>row.unit);
           if(missing.length)all.push({storeId:store.id,storeName:store.label,productId:product.id,productName:product.label,missingUnits:missing,allUnitsUnquoted:missing.length===units.length,source:citation('quote',store.id+'|'+product.id,store.label+' · '+product.label,{storeId:store.id})});
         }
       }else for(const product of products){

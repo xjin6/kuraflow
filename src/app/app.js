@@ -14,6 +14,7 @@ import { createStoreUI } from '../features/stores/store-ui.js';
 import { initSelectControls } from '../ui/ui-controls.js';
 import { createUIMotion } from '../ui/ui-motion.js';
 import { createSettlementUI } from '../features/settlement/settlement-ui.js';
+import { createDailyOrdersUI } from '../features/orders/daily-orders-ui.js';
 import { createOverviewUI } from '../features/overview/overview-ui.js';
 import { createTasksUI } from '../features/tasks/tasks-ui.js';
 import { notificationQueue } from '../shared/overview-data.js';
@@ -70,7 +71,8 @@ if (clientPortal) {
   };
   restoreClientDraft();
 }
-const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (isCloud&&pageParams.get('page')==='team'?'team':'products') : (['overview','tasks','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || ['costs','pricing'].includes(pageParams.get('tab')) ? 'pricing' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
+const ui = { role: initialClient ? 'client' : 'admin', page: initialClient ? (['products','my-orders','my-statements','account','team'].includes(pageParams.get('page'))?pageParams.get('page'):'products') : (['overview','tasks','orders','delivery','catalogue','stores','costs','documents','materials','team'].includes(pageParams.get('page')) ? (pageParams.get('page') === 'delivery' ? 'orders' : pageParams.get('page') === 'costs' ? 'catalogue' : pageParams.get('page')) : 'overview'), productTab: pageParams.get('page') === 'costs' || ['costs','pricing'].includes(pageParams.get('tab')) ? 'pricing' : 'inventory', storeTab: pageParams.get('tab') === 'quotes' ? 'quotes' : 'stores', date: /^\d{4}-\d{2}-\d{2}$/.test(pageParams.get('date') || '') ? pageParams.get('date') : DEMO_DATE, status: 'all', query: '', category: '全部商品', catalogueTrash: !initialClient && pageParams.get('recycle') === '1', recycleQuery: '', quoteStore: pageParams.get('store') || model.state.activeStoreId, mobile: false, orderId: !initialClient && ['orders', 'delivery'].includes(pageParams.get('page')) ? pageParams.get('order') : null };
+ui.orderView=pageParams.get('orderView')==='individual'?'individual':'daily';
 Object.assign(ui, { settlementStore:pageParams.get('page') === 'documents' ? pageParams.get('store') || '' : '', settlementMonth:pageParams.get('month') || '', settlementView:pageParams.get('tab') === 'monthly' ? 'monthly' : 'orders', settlementDemo:pageParams.get('demo') === '1' });
 Object.assign(ui, { businessRange:['week','month','custom'].includes(pageParams.get('range')) ? pageParams.get('range') : 'month', businessStart:pageParams.get('from') || '', businessEnd:pageParams.get('to') || '', businessMetric:'amount', taskTab:'manual', taskView:pageParams.get('view')==='list'?'list':'dates', quotePlanId:pageParams.get('plan')||'', taskFilters:{manual:pageParams.get('filter')||'all'}, businessDemo:['overview','tasks'].includes(pageParams.get('page')) && pageParams.has('demo') ? pageParams.get('demo') === '1' : !isCloud });
 const labels = { pending: '待配货', packing: '配货中', ready: '待配送', delivering: '配送中', delivered: '已送达' };
@@ -148,7 +150,7 @@ function packedPercent(order) { return order.items.length ? Math.round(packedCou
 function quoteStore() { return model.getStores().find(store => store.id === ui.quoteStore) || model.getStores()[0]; }
 function activeStore() { return model.getStores().find(store => store.id === model.state.activeStoreId) || model.getStores()[0]; }
 function clientStoreHeader(store = activeStore()) {
-  return `<div class="client-store">${storeAvatar(store)}<div><strong>${escape(store.name)}</strong><p class="client-store-address">${icon('pin')}<span>${escape((store.address || t("配送地址待补充")))}</span></p></div></div>`;
+  return `<div class="client-store ${ui.clientStoreExpanded ? 'is-expanded' : ''}"><div class="client-store-summary">${storeAvatar(store)}<strong>${escape(store.name)}</strong><button class="icon-button client-store-toggle" type="button" data-action="toggle-store-info" aria-expanded="${Boolean(ui.clientStoreExpanded)}" aria-controls="client-store-address" ${ta("aria-label", "门店信息")}>${icon('chevron')}</button></div><p class="client-store-address" id="client-store-address">${icon('pin')}<span>${escape((store.address || t("配送地址待补充")))}</span></p></div>`;
 }
 function syncClientIdentity() {
   if (ui.role !== 'client') return;
@@ -201,9 +203,9 @@ function shell() {
     <div class="page-content">${pageContent()}<footer class="page-footer"><span>${tx("倉流 KURAFLOW")}</span><span>${(isCloud ? tx("云端工作台 · 东京时间 · 日元报价") : tx("本机交互演示 · 东京时间 · 日元报价 · 税口径按来源"))}</span></footer></div></main></div>`;
 }
 function pageContent() {
-  if(isCloud && ['overview','documents','my-statements'].includes(ui.page) && !model.reportHistoryReady) {
+  if(isCloud && ['overview','documents','my-statements','orders','my-orders'].includes(ui.page) && !model.reportHistoryReady) {
     if(!model.reportHistoryError && !model.pending) queueMicrotask(()=>model.loadReportHistory().then(()=>{
-      if(['overview','documents','my-statements'].includes(ui.page) && !overlay.firstChild && !model.pending) render();
+      if(['overview','documents','my-statements','orders','my-orders'].includes(ui.page) && !overlay.firstChild && !model.pending) render();
     }));
     return emptyState((model.reportHistoryError ? tx("历史订单读取失败") : tx("正在读取历史订单")),(model.reportHistoryError || ''),'clipboard')+(model.reportHistoryError?button(tx("重新加载"),'reload-report-history','secondary'):'');
   }
@@ -229,13 +231,20 @@ function render() {
   setI18nText(document, () => (ui.role === 'admin' ? t('每度商事 · 管理工作台') + ' | 倉流' : activeStore().name + t(' · 门店订货 | 倉流')), "title"); app.innerHTML = shell();
   uiMotion.afterRender([ui.role, ui.page, ui.page === 'catalogue' ? ui.productTab + ':' + ui.catalogueTrash : ui.page === 'stores' ? ui.storeTab : ui.orderId || ''].join(':'), ui.page === 'orders' ? ui.status : '', motionBefore);
   flowUI.sync();
-  scheduleOrderContext();
+  schedulePageContext();
 }
-let orderContextFrame = 0;
-function scheduleOrderContext() {
-  if (orderContextFrame) return;
-  orderContextFrame = requestAnimationFrame(() => {
-    orderContextFrame = 0;
+let pageContextFrame = 0;
+function schedulePageContext() {
+  if (pageContextFrame) return;
+  pageContextFrame = requestAnimationFrame(() => {
+    pageContextFrame = 0;
+    const cart = app.querySelector('.cart-panel'), mobileCart = app.querySelector('.mobile-cart-bar');
+    if (cart && mobileCart) {
+      const rect = cart.getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const headerBottom = app.querySelector('.topbar')?.getBoundingClientRect().bottom || 0;
+      mobileCart.hidden = rect.top < viewportHeight - 80 && rect.bottom > headerBottom;
+    }
     const summary = app.querySelector('.order-detail-summary'), bar = app.querySelector('.order-context-bar');
     if (!summary || !bar) return;
     const rect = summary.getBoundingClientRect(), top = (app.querySelector('.topbar')?.getBoundingClientRect().bottom || 0) + 8;
@@ -243,8 +252,8 @@ function scheduleOrderContext() {
     if (!bar.hidden) Object.assign(bar.style, { top: `${top}px`, left: `${rect.left}px`, width: `${rect.width}px` });
   });
 }
-window.addEventListener('scroll', scheduleOrderContext, { passive: true });
-window.addEventListener('resize', scheduleOrderContext);
+window.addEventListener('scroll', schedulePageContext, { passive: true });
+window.addEventListener('resize', schedulePageContext);
 function hasLocalDraftEditor() {
   return Boolean(overlay.firstChild || document.querySelector('.inventory-editor, .quote-entry, [data-packing-saving]') || [...document.querySelectorAll('.inline-editor-feedback')].some(el => el.textContent === t("未保存")));
 }
@@ -275,11 +284,16 @@ function routePanel(orders) {
   const active = orders.filter(o => ['ready', 'delivering'].includes(o.stage)).slice(0, 3);
   return `<section class="section-card route-summary"><div class="section-header"><h2 class="section-title">${tx("配送动态")}</h2><span class="live-pill"><i></i>${tx("实时")}</span></div><div class="route-header"><span class="route-region">${tx("关西配送")}</span><strong>${orders.filter(o => o.stage === 'delivering').length}<small> ${tx("单配送中")}</small></strong></div><div class="route-stops">${(active.length ? active.map((o, i) => `<div class="route-stop"><div class="route-dot ${o.stage === 'delivering' ? 'active' : ''}">${i + 1}</div><div class="route-meta"><strong>${escape(model.getStore(o.storeId).name.replace('杨国福', ''))}</strong><span>${tx("{0} · {1} 种货品", [labels[o.stage], o.items.length])}</span></div><button class="icon-button" ${ta("aria-label", "查看{0}订单", [escape(model.getStore(o.storeId).name)])} data-action="order-detail" data-id="${o.id}">${icon('chevron')}</button></div>`).join('') : `<p class="muted-copy">${tx("目前没有待发出的订单。")}</p>`)}</div><div class="driver-card">${icon('truck')}<div><strong>${tx("配送流程")}</strong><span>${tx("配齐 → 出发 → 确认送达")}</span></div></div><div class="section-footer"><button class="text-button" data-page="orders">${tx("查看订单履约 {0}", [icon('arrow')])}</button></div></section>`;
 }
-function filterTabs() { return `<div class="tabs">${[['all', '全部订单'], ...Object.entries(labels)].map(([stage, label]) => `<button class="tab ${ui.status === stage ? 'active' : ''}" data-action="filter-status" data-status="${stage}">${tx(label)} <span>${dailyOrders().filter(o => stage === 'all' || o.stage === stage).length}</span></button>`).join('')}</div>`; }
+function filterTabs(groups = null) { return `<div class="tabs">${[['all', '全部订单'], ...Object.entries(labels)].map(([stage, label]) => `<button class="tab ${ui.status === stage ? 'active' : ''}" data-action="filter-status" data-status="${stage}">${groups&&stage!=='all'?tx('含{0}',[mp(label)]):tx(label)} <span>${groups?groups.filter(group=>stage==='all'||group.orders.some(order=>order.stage===stage)).length:dailyOrders().filter(o => stage === 'all' || o.stage === stage).length}</span></button>`).join('')}</div>`; }
 function ordersPage() {
+  if(ui.orderView==='daily') {
+    const groups=dailyOrdersUI.groups(dailyOrders()),visible=dailyOrdersUI.filter(groups,{status:ui.status,query:ui.query});
+    return titleHeading(tx("订单履约"),'',dateControl()+button(tx("导出配货单"),'export','secondary','','download'))+
+      `<section class="section-card fulfillment-workspace"><div class="order-list-modebar">${dailyOrdersUI.modeSwitch()}<span>${tx('{0} 组 · {1} 笔订单',[visible.length,visible.reduce((sum,g)=>sum+g.orders.length,0)])}</span></div><div class="filter-bar">${filterTabs(groups)}</div><div class="list-search"><label class="search-box">${icon('search')}<input id="list-search" value="${escape(ui.query)}" ${ta('placeholder','门店名称或订单编号')} ${ta('aria-label','搜索订单')}></label></div></section>`+dailyOrdersUI.cards(visible);
+  }
   const orders = filteredOrders().slice().sort((a, b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
   return titleHeading(tx("订单履约"), '', dateControl() + button(tx("导出配货单"), 'export', 'secondary', '', 'download')) +
-    `<section class="section-card fulfillment-workspace"><div class="filter-bar">${filterTabs()}</div><div class="list-search"><label class="search-box">${icon('search')}<input id="list-search" value="${escape(ui.query)}" ${ta("placeholder", "门店名称或订单编号")} ${ta("aria-label", "搜索订单")}></label><span>${tx("{0} 笔订单", [orders.length])}</span></div></section><div class="fulfillment-list">${(orders.map(o => {
+    `<section class="section-card fulfillment-workspace"><div class="order-list-modebar">${dailyOrdersUI.modeSwitch()}<span>${tx("{0} 笔订单",[orders.length])}</span></div><div class="filter-bar">${filterTabs()}</div><div class="list-search"><label class="search-box">${icon('search')}<input id="list-search" value="${escape(ui.query)}" ${ta("placeholder", "门店名称或订单编号")} ${ta("aria-label", "搜索订单")}></label></div></section><div class="fulfillment-list">${(orders.map(o => {
       const store = model.getStore(o.storeId);
       const action = ['pending','packing'].includes(o.stage) ? button((o.stage === 'pending' ? tx("开始配货") : tx("继续配货")), 'order-detail', 'primary', `data-id="${o.id}"`, 'box')
         : o.stage === 'ready' ? button(tx("开始配送"), 'stage', 'primary', `data-id="${o.id}" data-stage="delivering"`, 'truck')
@@ -295,12 +309,32 @@ function cartPanel() {
   const items = cartItems();
   const nextDay = new Date(new Date(`${DEMO_DATE}T12:00:00+09:00`).getTime() + 86400000).toISOString().slice(0, 10);
   const date = model.state.cartDeliveryDate || (isCloud ? nextDay : '2026-10-09');
-  return `<aside class="cart-panel section-card"><div class="section-header"><h2 class="section-title">${tx("我的订货单")} <span class="counter">${items.length}</span></h2>${(items.length ? `<button class="text-button" data-action="clear-cart">${tx("清空")}</button>` : '')}</div><div class="cart-body">${(items.length ? `<div class="cart-lines">${items.map(i => `<div class="cart-line"><span class="cart-product-icon">${icon('box')}</span><div class="cart-line-details"><strong>${escape(i.product.name)}</strong><span>${money(i.price)} / ${tx(i.unit)} × ${i.qty}</span></div><strong>${money(i.qty * i.price)}</strong><button class="icon-button" data-action="remove-cart" data-id="${i.product.id}" ${ta("aria-label", "移除{0}", [escape(i.product.name)])}>${icon('close')}</button></div>`).join('')}</div>` : `<div class="cart-empty">${icon('box')}<strong>${tx("尚未选择商品")}</strong><p>${tx("点击商品旁的 + 开始订货")}</p></div>`)}<div class="field"><label for="delivery-date">${tx("期望配送日期")}</label><input class="input" type="date" id="delivery-date" required min="${DEMO_DATE}" value="${escape(date)}"></div><div class="field"><label for="order-note">${tx("配送备注")} <span>${tx("选填")}</span></label><textarea class="input" id="order-note" rows="2" ${ta("placeholder", "例如：请在午市前送达")}>${escape((model.state.cartNote || ''))}</textarea></div><div class="cart-summary"><span>${tx("{0} 种商品 · 日元报价", [items.length])}</span><div class="cart-total"><span>${tx("商品小计")}</span><strong>${money(cartTotal())}</strong></div></div>${button(tx("提交订货单"), 'submit-order', 'primary', items.length ? '' : 'disabled', 'arrow')}<p class="cart-hint">${tx("{0} 提交后厨房即可接收并安排配货", [icon('check')])}</p></div></aside>`;
+  return `<aside class="cart-panel section-card" aria-labelledby="cart-title">
+    <div class="section-header cart-header"><h2 id="cart-title" class="section-title">${tx("我的订货单")}<span class="counter">${items.length}</span></h2>${(items.length ? `<button class="text-button" data-action="clear-cart">${tx("清空")}</button>` : '')}</div>
+    <div class="cart-body">
+      ${(items.length ? `<div class="cart-lines">${items.map(i => `<div class="cart-line">
+        ${(i.product.image ? `<button type="button" class="cart-product-visual product-image-button" data-action="price-info" data-id="${escape(i.product.id)}" aria-haspopup="dialog" ${ta("aria-label", "查看{0}的商品详情", [escape(i.product.name)])}><img src="${escape(i.product.image)}" alt="" loading="lazy"></button>` : `<span class="cart-product-visual cart-product-placeholder" aria-hidden="true">${icon('box')}</span>`)}
+        <div class="cart-line-details"><strong>${escape(i.product.name)}</strong><div class="cart-line-meta"><span>${money(i.price)} / ${tx(i.unit)} × ${i.qty}</span><strong class="cart-line-amount">${money(i.qty * i.price)}</strong></div></div>
+        <button class="icon-button" data-action="remove-cart" data-id="${i.product.id}" ${ta("aria-label", "移除{0}", [escape(i.product.name)])}>${icon('close')}</button>
+      </div>`).join('')}</div>` : `<div class="cart-empty">${icon('box')}<strong>${tx("尚未选择商品")}</strong><p>${tx("点击商品旁的 + 开始订货")}</p></div>`)}
+      <div class="cart-fulfillment">
+        <div class="field"><label for="delivery-date">${tx("期望配送日期")}</label><input class="input" type="date" id="delivery-date" required min="${DEMO_DATE}" value="${escape(date)}"></div>
+        <div class="field"><label class="cart-field-label" for="order-note"><span>${tx("配送备注")}</span><small>${tx("选填")}</small></label><textarea class="input" id="order-note" rows="2" ${ta("placeholder", "例如：请在午市前送达")}>${escape((model.state.cartNote || ''))}</textarea></div>
+      </div>
+      <div class="cart-summary"><div class="cart-total"><span>${tx("商品小计")}</span><strong>${money(cartTotal())}</strong></div></div>
+      ${button(tx("提交订货单"), 'submit-order', 'primary cart-submit', items.length ? '' : 'disabled', 'arrow')}
+    </div>
+  </aside>`;
 }
 function clientOrdersPage() {
+  const heading=titleHeading(tx('我的订单'),'',button(tx('继续订货'),'client-products','primary','','plus'));
+  if(ui.orderView==='daily') {
+    const groups=dailyOrdersUI.filter(dailyOrdersUI.groups(model.state.orders.filter(order=>order.storeId===activeStore().id)),{query:ui.query});
+    return heading+`<div class="order-list-modebar">${dailyOrdersUI.modeSwitch()}<span>${tx('{0} 组 · {1} 笔订单',[groups.length,groups.reduce((sum,g)=>sum+g.orders.length,0)])}</span></div>`+dailyOrdersUI.cards(groups);
+  }
   const orders = model.state.orders.filter(o => o.storeId === activeStore().id).slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-  return titleHeading(tx("我的订单"), '查看订单明细、配货进度与配送状态。', clientStoreSelect() + button(tx("继续订货"), 'client-products', 'primary', '', 'plus'), 'YOUR ORDERS') +
-    `<div class="order-cards">${(orders.map(o => `<article class="order-card section-card"><div class="order-card-header"><div><strong>${o.id}</strong><span>${tx("配送日期：{0}", [o.deliveryDate])}</span></div>${statusBadge(o.stage)}</div><div class="client-order-progress">${stages.map((s, i) => `<div class="delivery-step ${stages.indexOf(o.stage) >= i ? 'done' : ''}"><i>${(stages.indexOf(o.stage) > i ? '✓' : i + 1)}</i><span>${tx(labels[s])}</span></div>`).join('')}</div><div class="order-line-summary">${o.items.map(i => `<div><span>${escape(model.getProduct(i.productId).icon)} ${escape(model.getProduct(i.productId).name)} <small>× ${i.qty} ${(i.unit || model.getProduct(i.productId).unit)}</small></span><strong>${money(lineAmount(i))}</strong></div>`).join('')}</div>${(o.issue ? `<div class="notice ${o.issueResolvedAt?'':'notice-warning'}">${tx("{0} 厨房提醒：{1}{2}", [icon(o.issueResolvedAt?'check':'alert'), escape(o.issue), (o.issueResolvedAt ? mp(" · 已处理") : '')])}</div>` : '')}<div class="order-card-footer"><span>${(o.note ? '备注：' + escape(o.note) : tx("下单价格已锁定 · 税口径按来源"))}</span><div>${tx("已知报价金额{0}", [(model.orderUnquotedCount(o) ? mj([mj([mp("（另有 "), model.orderUnquotedCount(o)]), mp(" 项待报价）")]) : '')])} <strong>${money(model.orderTotal(o))}</strong></div></div></article>`).join('') || emptyState(tx("还没有订货记录"), tx("前往「我要订货」，创建你的第一笔订单。"), 'clipboard'))}</div>`;
+  return heading +
+    `<div class="order-list-modebar">${dailyOrdersUI.modeSwitch()}<span>${tx("{0} 笔订单",[orders.length])}</span></div><div class="order-cards">${(orders.map(o => `<article class="order-card section-card"><div class="order-card-header"><div><strong>${o.id}</strong><span>${tx("配送日期：{0}", [o.deliveryDate])}</span></div>${statusBadge(o.stage)}</div><div class="client-order-progress">${stages.map((s, i) => `<div class="delivery-step ${stages.indexOf(o.stage) >= i ? 'done' : ''}"><i>${(stages.indexOf(o.stage) > i ? '✓' : i + 1)}</i><span>${tx(labels[s])}</span></div>`).join('')}</div><div class="order-line-summary">${o.items.map(i => `<div><span>${escape(model.getProduct(i.productId).icon)} ${escape(model.getProduct(i.productId).name)} <small>× ${i.qty} ${(i.unit || model.getProduct(i.productId).unit)}</small></span><strong>${money(lineAmount(i))}</strong></div>`).join('')}</div>${(o.issue ? `<div class="notice ${o.issueResolvedAt?'':'notice-warning'}">${tx("{0} 厨房提醒：{1}{2}", [icon(o.issueResolvedAt?'check':'alert'), escape(o.issue), (o.issueResolvedAt ? mp(" · 已处理") : '')])}</div>` : '')}<div class="order-card-footer"><span>${(o.note ? '备注：' + escape(o.note) : tx("下单价格已锁定 · 税口径按来源"))}</span><div>${tx("已知报价金额{0}", [(model.orderUnquotedCount(o) ? mj([mj([mp("（另有 "), model.orderUnquotedCount(o)]), mp(" 项待报价）")]) : '')])} <strong>${money(model.orderTotal(o))}</strong></div></div></article>`).join('') || emptyState(tx("还没有订货记录"), tx("前往「我要订货」，创建你的第一笔订单。"), 'clipboard'))}</div>`;
 }
 function accountPage() {
   const s = activeStore();
@@ -397,11 +431,11 @@ function openOrderDetail(id) {
   if (ui.role !== 'admin') throw new Error('配货管理仅供管理员操作。');
   const order = model.state.orders.find(order => order.id === id);
   if (!order) throw new Error('未找到订单。');
-  const returnView = { page: ui.page, date: ui.date, status: ui.status, query: ui.query, scrollY: window.scrollY };
+  const returnView = { page: ui.page, date: ui.date, status: ui.status, query: ui.query, orderView: ui.orderView, scrollY: window.scrollY };
   history.replaceState({ kuraflowView: returnView }, '', location.href);
   closeOverlay();
   ui.page = 'orders'; ui.orderId = id; ui.date = order.deliveryDate; ui.mobile = false;
-  history.pushState({ kuraflowOrder: true, returnToList: returnView.page === 'orders' }, '', `?page=orders&order=${encodeURIComponent(id)}&date=${order.deliveryDate}`);
+  history.pushState({ kuraflowOrder: true, returnToList: returnView.page === 'orders' }, '', `?page=orders&order=${encodeURIComponent(id)}&date=${order.deliveryDate}&orderView=${ui.orderView}`);
   render(); window.scrollTo({ top: 0, behavior: 'instant' });
   document.querySelector('.order-detail-title h1')?.setAttribute('tabindex', '-1');
   document.querySelector('.order-detail-title h1')?.focus({ preventScroll: true });
@@ -465,6 +499,7 @@ function setCart(id, quantity, fullRender = true) {
     if (cart) cart.outerHTML = cartPanel();
     const bar = app.querySelector('.mobile-cart-bar');
     if (bar) bar.outerHTML = mobileCartBar(); else app.querySelector('.client-order-layout')?.insertAdjacentHTML('afterend', mobileCartBar());
+    schedulePageContext();
   }
 }
 function nav(page, tab = '') {
@@ -622,6 +657,7 @@ async function runAction(action, el) {
   if (await overviewUI.handleAction(action, el)) return;
   if (await settlementUI.handleAction(action, el)) return;
   if (await storeUI.handleAction?.(action, el)) { refreshLocalWhenReady(); return; }
+  if (await dailyOrdersUI.handleAction(action, el)) return;
   if (await pricingUI.handleAction(action, el)) { refreshLocalWhenReady(); return; }
   if (await businessUI.handleAction(action, el)) { refreshLocalWhenReady(); return; }
   if (action === 'logout') { model.save(); await cloudRequest('/api/accounts/logout', {}); location.href = principal.role === 'admin' ? '/?login=admin' : '/?view=client'; return; }
@@ -644,7 +680,7 @@ async function runAction(action, el) {
   if (action === 'home') return nav(ui.role === 'admin' ? 'overview' : 'products');
   if (action === 'view-orders') return nav('orders');
   if (action === 'client-products') return nav('products');
-  if (action === 'cart-scroll') return document.querySelector('.cart-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (action === 'cart-scroll') return document.querySelector('.cart-panel')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   if (action === 'mobile-menu') { ui.mobile = !ui.mobile; app.querySelector('.app-shell')?.classList.toggle('mobile-open', ui.mobile); return; }
   if (action === 'mobile-close') { ui.mobile = false; app.querySelector('.app-shell')?.classList.remove('mobile-open'); return; }
   if (action === 'close' || action === 'overlay-close') { closeOverlay(); refreshLocalWhenReady(); return; }
@@ -867,6 +903,7 @@ window.addEventListener('popstate', event => {
   closeOverlay();
   ui.page = ['overview', 'tasks', 'orders', 'catalogue', 'stores', 'documents', 'materials', 'team'].includes(requested) ? requested : requested === 'delivery' ? 'orders' : requested === 'costs' ? 'catalogue' : 'overview';
   ui.orderId = ui.page === 'orders' ? params.get('order') : null;
+  ui.orderView=(previous?.orderView||params.get('orderView'))==='individual'?'individual':'daily';
   ui.productTab = requested === 'costs' || ['costs','pricing'].includes(params.get('tab')) ? 'pricing' : 'inventory';ui.quotePlanId=params.get('plan')||'';
   ui.storeTab = params.get('tab') === 'quotes' ? 'quotes' : 'stores';
   if(isCloud&&ui.page==='team') {
@@ -897,6 +934,7 @@ const pricingUI = createPricingUI({costFor:p=>businessUI.productCost(p),model,ui
 const storeUI = createStoreUI({pricingPicker:store=>pricingUI.picker(store), model, ui, isCloud, personalAccounts:Boolean(principal?.accountRole), canManageAccounts:principal?.accountRole==='owner', escape, icon, button, titleHeading, managementTabs, managementHeading, modal, storeAvatar, closeOverlay, render, toast });
 const businessUI = createBusinessUI({pricingSelector:store=>pricingUI.selector(store),pricingPicker:store=>pricingUI.picker(store), isCloud, model, ui, money, escape, icon, button, titleHeading, managementTabs, managementHeading, clientStoreSelect, cartPanel, qtyControl, cartTotal, cartItems, mobileCartBar, emptyState, modal, closeOverlay, activeStore, clientStoreHeader, statCard, render, nav, toast });
 const settlementUI = createSettlementUI({ model, ui, escape, money, icon, button, modal, activeStore, storeAvatar, company, statCard, emptyState, render, nav, toast, download, getDocumentProfile:isCloud?()=>cloudRequest('/api/document-profile'):null });
+const dailyOrdersUI=createDailyOrdersUI({model,ui,escape,money,button,icon,storeAvatar,activeStore,render,emptyState,exportRecord:settlementUI.exportRecord});
 const accountsUI=createAccountsUI({request:cloudRequest,principal:principal||{role:'admin'},escape,button,icon,modal,closeOverlay,toast,render:()=>{if(ui.page==='team')render();},onProfileChange:syncAccountProfiles});
 if(isCloud&&ui.page==='team'&&principal.role==='admin'&&principal.accountRole==='owner'&&pageParams.get('store'))accountsUI.openStoreTeam(pageParams.get('store'));
 const tasksUI = createTasksUI({ model, ui, escape, icon, button, render, modal, closeOverlay, toast, loadAuthors: isCloud ? async()=>{const response=await fetch('/api/team/list',{credentials:'same-origin'});if(!response.ok)throw new Error('无法读取添加人');return (await response.json()).accounts||[];} : null });

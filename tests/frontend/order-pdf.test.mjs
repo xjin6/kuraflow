@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { PDFArray, PDFDocument, PDFName, decodePDFRawStream } from 'pdf-lib';
 import { createOrderPDF } from '../../src/features/settlement/order-pdf.js';
 import { orderSettlement } from '../../src/shared/settlement-data.js';
+import { dailyOrderSummary } from '../../src/shared/daily-orders.js';
 
 const [fontBytes, serifFontBytes] = await Promise.all([
   readFile(new URL('../../public/fonts/KuraflowDocumentSans.ttf', import.meta.url)),
@@ -98,6 +99,15 @@ test('delivery PDF uses the approved landscape page and stored order values with
   assert.match(pdf.text, /¥270 -/);
   assert.doesNotMatch(pdf.text, /現在の商品名|現在の規格|98765/);
   assert.deepEqual(record, before, 'export does not mutate historical order data');
+});
+
+test('daily PDF shows the delivery day, combined KG quantity and exact saved totals with source IDs in metadata',async()=>{
+ const model={getStore:id=>({id,name:'合并演示门店'}),getProduct:()=>({})};
+ const orders=[.125,.25].map((qty,index)=>({id:'SOURCE-'+index,storeId:'s1',deliveryDate:'2026-10-30',stage:'delivered',shipping:0,shippingTax:0,items:[item({qty,unit:'KG',price:100,perBase:1})]}));
+ const record=dailyOrderSummary(model,orders,{name:'演示厨房'}),before=structuredClone(orders);
+ const pdf=await inspectPdf(await createOrderPDF(record,pdfOptions));
+ assert.equal(pdf.pages.length,1);assert.match(pdf.text,/納品日：2026\/10\/30 \/ 2件合算/);assert.ok(pdf.runs.includes('0.375'));assert.ok(pdf.runs.includes('37.5'));assert.match(pdf.text,/¥40.5 -/);
+ assert.match(pdf.doc.getSubject(),/SOURCE-0, SOURCE-1/);assert.doesNotMatch(pdf.text,/SOURCE-0|SOURCE-1/);assert.deepEqual(orders,before);
 });
 
 test('multipage export preserves all rows and an oversized name without duplicating its quantity', async () => {

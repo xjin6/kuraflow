@@ -42,6 +42,30 @@ test('plan membership and price versions reject stale concurrent changes; store 
  for(const [name,args] of [['createQuotePlan',['非法方案']],['setProductCost',['p1',1,0]],['enableUnlimitedStock',['p1']],['setStoreQuotePlan',['s1',null,1]],['reorderManualTasks',[[],0]]])await assert.rejects(h.command(name,args,h.store),{status:403});
 });
 
+test('saved KG-only quotes become orderable boxes without rewriting data, with price-change checks and historical prices',async()=>{
+ const h=await fixture(),p=(await h.command('addProduct',[{name:'牛骨换算',category:'冷冻品',unit:'箱',spec:'15KG/箱',stock:10}])).result;
+ await h.command('setSaleUnitEquations',[p.id,[{fromQty:1,fromUnit:'箱',toQty:15,toUnit:'KG'}]]);
+ const plan=(await h.command('createQuotePlan',['换算方案'])).result;
+ const set=async(unit,price)=>h.command('setQuotePlanPrice',[plan.id,p.id,unit,{price,taxBasis:'exclusive',taxRate:.08},(await h.read()).quotePlans.find(x=>x.id===plan.id).version]);
+ await set('KG',200);await h.command('setStoreQuotePlan',['s1',plan.id,0]);
+ const before=await h.read(),projected=(await getState(db,h.store)).state;
+ assert.equal(projected.unitQuotes.s1[p.id].箱.price,3000);assert.equal(projected.unitQuotes.s1[p.id].KG.price,200);
+ assert.equal(projected.unitQuotes.s1[p.id].箱.source,null);assert.equal(projected.quotePlans,undefined);assert.equal(projected.products.find(x=>x.id===p.id).costPrice,undefined);
+ assert.equal((await getState(db,{...h.store,storeId:'s2'})).state.products.some(x=>x.id===p.id),false);
+ assert.deepEqual(await h.read(),before,'reading computed prices must not persist new prices or mutate existing records');
+ const args=['s1',{[p.id]:1},tokyoToday(),'',{[p.id]:'箱'}];
+ const order=(await h.command('submitOrder',args,h.store)).result;
+ assert.equal(order.items[0].price,3000);assert.equal(order.items[0].baseQty,1);assert.equal(order.items[0].taxRate,.08);
+ const expectedQuotes={[p.id]:{price:3000,unit:'箱',perBase:1,taxBasis:'exclusive',taxRate:.08}};
+ await set('KG',220);
+ await assert.rejects(executeCommand(db,h.store,{type:'submitOrder',args,expectedQuotes,idempotencyKey:crypto.randomUUID()}),{status:409,code:'QUOTE_CHANGED'});
+ const after=await h.read();assert.equal(after.orders.length,1);assert.equal(after.orders[0].items[0].price,3000);assert.equal(after.inventory[p.id],9);
+ assert.equal((await getState(db,h.store)).state.prices.s1[p.id],3300);
+ await set('箱',2900);await set('KG',240);assert.equal((await getState(db,h.store)).state.prices.s1[p.id],2900);
+ await set('箱',null);assert.equal((await getState(db,h.store)).state.prices.s1[p.id],3600);
+ assert.equal((await h.read()).quotePlans.find(x=>x.id===plan.id).quotes[p.id].箱.price,null);
+});
+
 test('unlimited inventory is explicit, survives ordering, respects store allocation and requires a valid new physical count',async()=>{
  const h=await fixture();await h.command('setStoreAllocation',['s1','p1',3]);await h.command('enableUnlimitedStock',['p1']);
  const one=await getState(db,h.store),two=await getState(db,{...h.store,storeId:'s2'});assert.equal(one.state.inventory.p1,3);assert.equal(one.state.products[0].stockUnlimited,false);assert.equal(two.state.inventory.p1,null);assert.equal(two.state.products[0].stockUnlimited,true);
@@ -62,7 +86,7 @@ test('source quote units package and 500g persist through quotes, store projecti
  await h.command('setStoreQuotePlan',['s1',plan.id,0]);
  const projected=(await getState(db,h.store)).state;
  assert.equal(projected.unitQuotes.s1[weight.id]['500g'].price,2160);
- assert.equal(projected.prices.s1[weight.id],null);
+ assert.equal(projected.prices.s1[weight.id],4320);
  assert.equal(projected.unitQuotes.s1[pack.id]['包'].price,260);
  const order=(await h.command('submitOrder',['s1',{[weight.id]:3,[pack.id]:2},tokyoToday(),'',{[weight.id]:'500g',[pack.id]:'包'}],h.store)).result;
  assert.equal(order.items[0].unit,'500g');assert.equal(order.items[0].baseQty,1.5);assert.equal(order.items[0].price,2160);

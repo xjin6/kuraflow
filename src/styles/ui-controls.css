@@ -54,6 +54,11 @@
 }
 @media(prefers-reduced-motion:reduce) { .ui-select-trigger, .ui-select-arrow { transition:none; } }
 
+.ui-select-menu-unit { padding:3px; border-radius:7px; font-size:14px; }
+.ui-select-menu-unit .ui-select-option { min-height:32px; padding:5px 7px; gap:6px; border-radius:4px; }
+.ui-select-menu-unit .ui-select-check { flex-basis:12px; width:12px; }
+.ui-select-menu-unit .ui-select-check svg { width:12px; height:12px; }
+
 /* Date fields and calendar popovers use the same component tokens as selects. */
 .ui-date { position:relative; display:block; width:100%; min-width:0; }
 .ui-date input.ui-date-native { position:absolute !important; width:1px !important; min-width:0 !important; height:1px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; opacity:0; clip-path:inset(50%); pointer-events:none; }

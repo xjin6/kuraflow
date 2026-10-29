@@ -1094,9 +1094,6 @@ section.route-summary { padding: 0; }
 @media (max-width: 1024px) {
   .client-order-layout.ordering-table-mode { grid-template-columns: 1fr; }
   .ordering-table-mode .cart-panel { position: static; }
-  .ordering-table-mode .cart-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
-  .ordering-table-mode .cart-lines, .ordering-table-mode .cart-empty, .ordering-table-mode .cart-summary, .ordering-table-mode .cart-hint { grid-column: 1 / -1; }
-  .ordering-table-mode .cart-body > .btn { grid-column: 1 / -1; }
   .ordering-table-mode .cart-lines { max-height: 280px; }
   .ordering-toolbar .search-box { width: 230px; }
 }
@@ -1151,7 +1148,6 @@ section.route-summary { padding: 0; }
   .quick-order-table td { padding-top: 13px; padding-bottom: 13px; }
   .quick-order-table .quick-product { gap: 8px; }
   .quick-product .product-photo, .quick-product > img { width: 34px; height: 34px; }
-  .ordering-table-mode .cart-body { display: block; }
   .quantityNotes, .quantity-notes { font-size: 13px; }
   .cost-summary-grid { grid-template-columns: 1fr; gap: 12px; }
   .cost-summary-grid .stat-card { padding: 18px; }

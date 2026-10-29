@@ -11,6 +11,7 @@ async function loadFont(name) {
 const clean=value=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/[\u0000-\u001f\u007f]/g,'');
 const known=value=>value!==null&&value!==undefined&&Number.isFinite(Number(value));
 const number=(value,grouped=false)=>known(value)?Number(value).toLocaleString('en-US',{useGrouping:grouped,maximumFractionDigits:2}):'未確定';
+const quantity=value=>known(value)?Number(value).toLocaleString('en-US',{useGrouping:false,maximumFractionDigits:3}):'未確定';
 const money=value=>known(value)?'¥'+number(value,true)+' -':'未確定';
 const PAGE=[841.68,595.44];
 const GRID=[50.52,402.36,457.80,558.60,601.32,657.36];
@@ -46,7 +47,7 @@ export async function createOrderPDF(record,{fontBytes,serifFontBytes,sealBytes,
   }
   doc.setTitle(`${clean(record.store.name)} - ${clean(record.id)} - 納品書`);
   doc.setAuthor(clean(record.issuer.name));doc.setCreator('KuraFlow');
-  doc.setSubject(`注文番号 ${clean(record.id)} / 配送日 ${clean(record.order.deliveryDate)}`);
+  doc.setSubject(`注文番号 ${clean(record.aggregation?.orderIds?.join(', ') || record.id)} / 配送日 ${clean(record.order.deliveryDate)}`);
   let page;
   const widthOf=(value,size=9,font=serif)=>font.widthOfTextAtSize(clean(value),size);
   function text(value,x,baseline,size=9,align='left',font=serif,bold=false) {
@@ -87,6 +88,7 @@ export async function createOrderPDF(record,{fontBytes,serifFontBytes,sealBytes,
   if(record.taxUnknown)notes.push('税区分未確認のため、消費税と税込合計は未確定です。');
   if(hasInclusive&&!allInclusive)notes.push('※ 税込表示の明細は、消費税を控除して小計を計算しています。');
   if(!known(record.shipping))notes.push('運賃未確認（上記金額には含みません）。');
+  if(record.aggregation&&record.shipping===null&&record.knownShipping>0)notes.push('登録済み運賃：'+money(record.knownShipping)+'（未確定分あり）。');
   if(record.order.isDemo)notes.push('デモ注文 / 演示订单');
   if(record.order.note&&!record.order.isDemo)notes.push('備考：'+clean(record.order.note));
   const headerExtras=[];
@@ -112,7 +114,7 @@ export async function createOrderPDF(record,{fontBytes,serifFontBytes,sealBytes,
   // continue without repeating its quantity/amount or dropping any text.
   const fragments=[];
   for(const line of record.lines) {
-    const cells=[wrap(nameFor(line),GRID[1]-GRID[0]-10),wrap(number(line.qty),GRID[2]-GRID[1]-6),wrap(line.unit,GRID[3]-GRID[2]-6),wrap(number(line.price),GRID[4]-GRID[3]-6),wrap(number(line.total),GRID[5]-GRID[4]-6)];
+    const cells=[wrap(nameFor(line),GRID[1]-GRID[0]-10),wrap(quantity(line.qty),GRID[2]-GRID[1]-6),wrap(line.unit,GRID[3]-GRID[2]-6),wrap(number(line.price),GRID[4]-GRID[3]-6),wrap(number(line.total),GRID[5]-GRID[4]-6)];
     const count=Math.max(...cells.map(c=>c.length));
     for(let start=0;start<count;start+=17)fragments.push({cells:cells.map(c=>c.slice(start,start+17)),height:Math.max(14.04,Math.min(17,count-start)*10.6+3.44)});
   }
@@ -129,6 +131,7 @@ export async function createOrderPDF(record,{fontBytes,serifFontBytes,sealBytes,
   function header() {
     page=doc.addPage(PAGE);
     text('発行日：'+clean(issuedDate).replaceAll('-','/'),540.84,76.86,13.12,'center');
+    if(record.aggregation?.kind==='store-day')text('納品日：'+clean(record.aggregation.day).replaceAll('-','/')+' / '+record.aggregation.count+'件合算',217.44,76.86,10,'center');
     recipientRows.forEach((row,i)=>text(row,217.44,102.5+i*21,18,'center',sans));
     rectangle(423.96,90.12,233.76,28.8,TITLE);rule(423.36,118.56,657.72,118.56,.72);
     text('納品書',540.72,116.32,13.12,'center',sans,true);

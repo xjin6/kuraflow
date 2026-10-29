@@ -49,13 +49,18 @@ export function createSettlementUI(ctx) {
     modal(tx("订单结算"),`<div class="document-detail settlement-detail"><div class="settlement-detail-header"><div><h3>${esc(store.name)}</h3><p>${esc((store.address || t("地址待填写")))}</p><p>${esc([store.contact,store.phone].filter(Boolean).join(' · '))}</p></div><div>${stateBadge(order)}<p>${esc(record.id)}</p><p>${tx("配送日期 {0}", [esc(order.deliveryDate)])}</p></div></div><div class="table-scroll"><table><thead><tr><th>${tx("商品 / 规格")}</th><th class="align-right">${tx("数量")}</th><th>${tx("单位")}</th><th class="align-right">${tx("单价")}</th><th class="align-right">${tx("金额")}</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(line.name)}<span class="cell-secondary">${esc(line.spec)}</span></td><td class="align-right">${line.qty}</td><td>${tx(line.unit)}</td><td class="align-right">${price(line.price)}</td><td class="align-right">${price(line.total)}</td></tr>`).join('')}</tbody></table></div><dl class="settlement-totals"><div><dt>${(record.unpriced ? tx("已知货品金额") : tx("货品金额"))}</dt><dd>${money(record.amount)}</dd></div><div><dt>${tx("税额")}</dt><dd>${price(record.tax)}</dd></div><div><dt>${tx("含税货品金额")}</dt><dd>${price(record.gross)}</dd></div><div><dt>${tx("运费")}</dt><dd>${(record.shipping===null ? tx("未录入") : money(record.shipping))}</dd></div></dl>${(record.unpriced||record.taxUnknown ? `<p class="settlement-note">${(record.unpriced ? tx("{0} 项单价待确认。", [record.unpriced]) : '')}${(record.taxUnknown ? tx("税口径未确认的项目未计入含税合计。") : '')}</p>` : '')}</div>`,button(tx("关闭"),'close','secondary')+button(tx("导出 PDF"),'order-pdf','primary',`data-id="${esc(id)}"`,'download'));
   }
   async function exportPDF(id, el) {
-    const record=recordFor(id), original=el.innerHTML;
+    return exportRecord(recordFor(id),el);
+  }
+  async function exportRecord(record,el,filename='') {
+    if(ui.role==='client'&&record.store.id!==activeStore().id)throw new Error('无法查看该订单。');
+    record={...record,issuer:{...issuer(),...record.issuer}};
+    const original=el.innerHTML;
     el.disabled=true; setI18nText(el, () => t("生成中…"), "textContent");
     try {
       const {createOrderPDF}=await import('./order-pdf.js');
       if(ctx.getDocumentProfile)record.issuer=(await ctx.getDocumentProfile()).issuer;
       const bytes=await createOrderPDF(record);
-      ctx.download(`${record.store.name}_${record.order.deliveryDate}_${record.id}_纳品书.pdf`.replace(/[\\/:*?"<>|]/g,'_'),bytes,'application/pdf');
+      ctx.download((filename||`${record.store.name}_${record.order.deliveryDate}_${record.id}_纳品书.pdf`).replace(/[\\/:*?"<>|]/g,'_'),bytes,'application/pdf');
       ctx.toast('PDF 已导出。');
     } finally { if(el.isConnected){el.disabled=false;el.innerHTML=original;} }
   }
@@ -78,5 +83,5 @@ export function createSettlementUI(ctx) {
     if(input.id==='settlement-demo')ui.settlementDemo=input.checked;
     updateURL();ctx.render();return true;
   }
-  return {page,handleAction,handleChange};
+  return {page,handleAction,handleChange,exportRecord};
 }

@@ -3,6 +3,7 @@ import {
   materialDocuments, exampleOrderLines, company, materialSummary,
 } from './business-data.js';
 import { isLegacyShortageNote, isPackingShortage, packingLineDone } from './notification-domain.js';
+import { resolveUnitPrice } from './unit-pricing.js';
 
 export const DEMO_DATE = '2026-10-08';
 export const STORAGE_KEY = 'kuraflow-business-preview-v2';
@@ -346,9 +347,14 @@ export class KitchenModel {
     const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,unit);
     const p = this.getProduct(productId);
     this.requireSaleUnit(productId, unit);
-    if (unit === p.unit) return this.getQuote(storeId, productId);
     if (!this.getStore(storeId)) throw new Error('门店不存在。');
-    return clone(this.state.unitQuotes?.[storeId]?.[productId]?.[unit] || {price:null,taxBasis:'unspecified',taxRate:null,source:null,kind:'unquoted'});
+    const raw = this.state.prices?.[storeId]?.[productId], meta = this.state.quoteMeta?.[storeId]?.[productId] || {};
+    const price = isBlank(raw) ? null : Number(raw);
+    const quotes = {...this.state.unitQuotes?.[storeId]?.[productId], [p.unit]:{
+      price,taxBasis:meta.taxBasis || 'unspecified',taxRate:meta.taxRate ?? null,
+      source:meta.source ?? null,kind:meta.kind || (price === null ? 'unquoted' : 'reference'),
+    }};
+    return resolveUnitPrice(this.getSaleUnits(productId), quotes, unit);
   }
   setUnitQuote(storeId, productId, unit, price, basis = 'unspecified', rate = null) {
     if(this.getStoreQuotePlan(storeId))throw new Error('此门店正在使用报价方案，请修改方案或先切换为独立报价。');
@@ -590,20 +596,19 @@ export class KitchenModel {
     return totalOnHand;
   }
   getPrice(storeId, productId) {
-    const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,this.getProduct(productId)?.unit).price;
-    if (!this.getProduct(productId)) throw new Error('商品不存在。');
-    if (!this.getStore(storeId)) throw new Error('门店不存在。');
-    const value = this.state.prices[storeId]?.[productId];
-    return isBlank(value) ? null : Number(value);
+    return this.getQuote(storeId, productId).price;
   }
   getQuote(storeId, productId) {
-    const plan=this.getStoreQuotePlan(storeId);if(plan)return this.getQuotePlanPrice(plan.id,productId,this.getProduct(productId)?.unit);
-    const price = this.getPrice(storeId, productId);
-    const meta = this.state.quoteMeta[storeId]?.[productId] || {};
-    return {
-      price, taxBasis: meta.taxBasis || 'unspecified', taxRate: meta.taxRate ?? null,
-      source: clone(meta.source ?? null), kind: meta.kind || (price === null ? 'unquoted' : 'reference'),
-    };
+    const product = this.getProduct(productId);
+    if (!product) throw new Error('商品不存在。');
+    if (this.getSaleUnits(productId).some(row => row.unit === product.unit)) return this.getUnitQuote(storeId, productId, product.unit);
+    // A historical base unit can remain an inventory unit after being removed
+    // from the sale units. Keep its raw record readable without re-enabling it.
+    if (!this.getStore(storeId)) throw new Error('门店不存在。');
+    const plan = this.getStoreQuotePlan(storeId);
+    const meta = plan ? plan.quotes?.[productId]?.[product.unit] || {} : this.state.quoteMeta?.[storeId]?.[productId] || {};
+    const raw = plan ? meta.price : this.state.prices?.[storeId]?.[productId], price = isBlank(raw) ? null : Number(raw);
+    return {price,taxBasis:meta.taxBasis || 'unspecified',taxRate:meta.taxRate ?? null,source:clone(meta.source ?? null),kind:meta.kind || (price === null ? 'unquoted' : 'reference')};
   }
   orderSubtotal(order) {
     return roundMoney(order.items.reduce((sum, item) => sum + (isBlank(item.price) ? 0 : roundMoney(item.qty * item.price)), 0));
@@ -637,7 +642,7 @@ export class KitchenModel {
   checkEditVersion(actual,expected) { if(expected!=null&&expected!==(actual||0))throw Object.assign(new Error('资料已被其他操作更新，请刷新后重新核对。'),{status:409}); }
   getQuotePlanPrice(id,productId,unit) {
     const plan=this.getQuotePlan(id);if(!plan)throw new Error('报价方案不存在。');this.requireSaleUnit(productId,unit);
-    return clone(plan.quotes?.[productId]?.[unit]||{price:null,taxBasis:'unspecified',taxRate:null,source:null,kind:'unquoted'});
+    return resolveUnitPrice(this.getSaleUnits(productId), plan.quotes?.[productId], unit);
   }
   setQuotePlanPrice(id,productId,unit,value,expectedVersion=null) {
     const plan=this.getQuotePlan(id),product=this.getProduct(productId);if(!plan||!product||product.deletedAt)throw new Error('报价方案或商品不存在。');

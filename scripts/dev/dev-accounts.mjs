@@ -11,7 +11,10 @@ import {KitchenModel} from '../../src/shared/data.js';
 import {loginToLocalPreview,previewPortal,previewPortals,scopedPreviewHeaders,scopedPreviewCookie} from './local-preview-login.mjs';
 import {createLocalFlowRuntime} from '../flow/flow-local-runtime.mjs';
 import {projectRoot as root} from '../lib/project-paths.mjs';
-const privateDir=path.join(root,'private-preview'),port=Number(process.env.ACCOUNTS_PORT||8787),origin=`http://localhost:${port}`;
+// Optional isolated fixture workspace for reviews; never replaces the normal local database.
+const namespace=process.env.ACCOUNTS_PREVIEW_NAMESPACE||'';
+if(namespace&&!/^[a-z0-9][a-z0-9-]{0,63}$/.test(namespace))throw new Error('Invalid local preview namespace');
+const privateDir=path.join(root,'private-preview',namespace),port=Number(process.env.ACCOUNTS_PORT||8787),origin=`http://localhost:${port}`;
 await fs.mkdir(privateDir,{recursive:true,mode:0o700});
 let codeKey;try{codeKey=await fs.readFile(path.join(privateDir,'store-code.key'),'utf8');}catch{codeKey=randomBytes(32).toString('hex');await fs.writeFile(path.join(privateDir,'store-code.key'),codeKey,{mode:0o600});}
 await fs.mkdir(path.join(root,'dist-worker'),{recursive:true});
@@ -20,7 +23,10 @@ const mime={'.mjs':'text/javascript; charset=utf-8','.html':'text/html; charset=
 const runtime=new Miniflare(convertV4MiniflareOptions({resourcePersistencePath:path.join(privateDir,'accounts-runtime'),workers:[{name:'kuraflow-accounts-preview',modules:true,scriptPath:path.join(root,'dist-worker/accounts-worker.mjs'),compatibilityDate:'2026-10-08',compatibilityFlags:['nodejs_compat','enable_request_signal'],d1Databases:{DB:'kuraflow-accounts-preview'},kvNamespaces:['MEDIA'],bindings:{PUBLIC_ORIGIN:'',LOCAL_TEST:'1',STORE_CODE_KEY:codeKey},serviceBindings:{ASSETS:async request=>{const relative=decodeURIComponent(new URL(request.url).pathname).replace(/^\//,'')||'index.html',file=path.resolve(root,'dist-cloud',relative);if(!file.startsWith(path.join(root,'dist-cloud')+path.sep))return new Response('Not found',{status:404});try{return new Response(await fs.readFile(file),{headers:{'Content-Type':mime[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'}});}catch{return new Response('Not found',{status:404});}}}}]}));
 const db=await runtime.getD1Database('DB');
 for(const name of (await fs.readdir(path.join(root,'backend/migrations'))).filter(n=>n.endsWith('.sql')).sort())await db.exec((await fs.readFile(path.join(root,'backend/migrations',name),'utf8')).replace(/--[^\n]*/g,'').replace(/\s+/g,' '));
-if(!await db.prepare('SELECT id FROM tenants LIMIT 1').first()){const model=new KitchenModel();await seedTenant(db,{tenantId:'local-demo-kitchen',state:model.state});}
+if(!await db.prepare('SELECT id FROM tenants LIMIT 1').first()){
+ const state=namespace?JSON.parse(await fs.readFile(path.join(privateDir,'seed.json'),'utf8')):new KitchenModel().state;
+ await seedTenant(db,{tenantId:'local-demo-kitchen',state});
+}
 let platformKey;
 try { platformKey=(await fs.readFile(path.join(privateDir,'platform-key.txt'),'utf8')).trim(); } catch {}
 const setup=await provisionPlatform(db,{key:platformKey});
